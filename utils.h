@@ -98,9 +98,11 @@ public:
 	u8* AddDataBlock(u8* data, int pos = -1);
 	u8* FindDataBlock(u8* data);
 	u8* FindOrAddDataBlock(u8* data);
-	u64 GetBlockCnt();
-	bool LoadFromFile(char* fn);
-	bool SaveToFile(char* fn);
+        u64 GetBlockCnt();
+        bool LoadFromFile(char* fn);
+        bool SaveToFile(char* fn);
+        bool LoadFromFileBase128(char* fn);
+        bool SaveToFileBase128(char* fn);
 };
 
 bool IsFileExist(char* fn);
