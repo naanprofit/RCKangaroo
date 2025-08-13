@@ -33,6 +33,7 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 <b>-max</b>		option to limit max number of operations. For example, value 5.5 limits number of operations to 5.5 * 1.15 * sqrt(range), software stops when the limit is reached. 
 
 <b>-tames</b>		filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. If the file is found, software loads tames to speedup solving. 
+<b>-tames128</b>        same as -tames but expects the file to be in base128 format.
 
 When public key is solved, software displays it and also writes it to "RESULTS.TXT" file. 
 
@@ -43,6 +44,9 @@ RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a
 Sample command to generate tames:
 
 RCKangaroo.exe -dp 16 -range 76 -tames tames76.dat -max 10
+You can also quickly generate a base128 tames file using the helper tool:
+
+./tamesgen mytames.dat 1000
 
 Then you can restart software with same parameters to see less K in benchmark mode or add "-tames tames76.dat" to solve some public key in 76-bit range faster.
 

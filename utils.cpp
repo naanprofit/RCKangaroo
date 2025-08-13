@@ -310,3 +310,138 @@ bool IsFileExist(char* fn)
 	fclose(fp);
 	return true;
 }
+
+static bool write_base128(FILE* fp, const u8* data, size_t len)
+{
+        int bits = 0;
+        unsigned int acc = 0;
+        for (size_t i = 0; i < len; ++i)
+        {
+                acc = (acc << 8) | data[i];
+                bits += 8;
+                while (bits >= 7)
+                {
+                        u8 out = (acc >> (bits - 7)) & 0x7F;
+                        if (fputc(out, fp) == EOF)
+                                return false;
+                        bits -= 7;
+                }
+        }
+        if (bits)
+        {
+                u8 out = (acc << (7 - bits)) & 0x7F;
+                if (fputc(out, fp) == EOF)
+                        return false;
+        }
+        return true;
+}
+
+static bool read_base128(FILE* fp, u8* data, size_t len)
+{
+        int bits = 0;
+        unsigned int acc = 0;
+        size_t pos = 0;
+        while (pos < len)
+        {
+                int ch = fgetc(fp);
+                if (ch == EOF)
+                        return false;
+                acc = (acc << 7) | (ch & 0x7F);
+                bits += 7;
+                if (bits >= 8)
+                {
+                        bits -= 8;
+                        data[pos++] = (acc >> bits) & 0xFF;
+                }
+        }
+        return true;
+}
+
+bool TFastBase::SaveToFileBase128(char* fn)
+{
+        FILE* fp = fopen(fn, "wb");
+        if (!fp)
+                return false;
+        if (!write_base128(fp, Header, sizeof(Header)))
+        {
+                fclose(fp);
+                return false;
+        }
+        for (int i = 0; i < 256; i++)
+                for (int j = 0; j < 256; j++)
+                        for (int k = 0; k < 256; k++)
+                        {
+                                TListRec* list = &lists[i][j][k];
+                                u8 cnt_buf[2];
+                                cnt_buf[0] = list->cnt & 0xFF;
+                                cnt_buf[1] = (list->cnt >> 8) & 0xFF;
+                                if (!write_base128(fp, cnt_buf, 2))
+                                {
+                                        fclose(fp);
+                                        return false;
+                                }
+                                for (int m = 0; m < list->cnt; m++)
+                                {
+                                        void* ptr = mps[i].GetRecPtr(list->data[m]);
+                                        if (!write_base128(fp, (u8*)ptr, DB_REC_LEN))
+                                        {
+                                                fclose(fp);
+                                                return false;
+                                        }
+                                }
+                        }
+        fclose(fp);
+        return true;
+}
+
+bool TFastBase::LoadFromFileBase128(char* fn)
+{
+        Clear();
+        FILE* fp = fopen(fn, "rb");
+        if (!fp)
+                return false;
+        if (!read_base128(fp, Header, sizeof(Header)))
+        {
+                fclose(fp);
+                return false;
+        }
+        for (int i = 0; i < 256; i++)
+                for (int j = 0; j < 256; j++)
+                        for (int k = 0; k < 256; k++)
+                        {
+                                TListRec* list = &lists[i][j][k];
+                                u8 cnt_buf[2];
+                                if (!read_base128(fp, cnt_buf, 2))
+                                {
+                                        fclose(fp);
+                                        return false;
+                                }
+                                list->cnt = cnt_buf[0] | (cnt_buf[1] << 8);
+                                if (list->cnt)
+                                {
+                                        u32 grow = list->cnt / 2;
+                                        if (grow < DB_MIN_GROW_CNT)
+                                                grow = DB_MIN_GROW_CNT;
+                                        u32 newcap = list->cnt + grow;
+                                        if (newcap > 0xFFFF)
+                                                newcap = 0xFFFF;
+                                        list->data = (u32*)realloc(list->data, newcap * sizeof(u32));
+                                        list->capacity = newcap;
+                                        for (int m = 0; m < list->cnt; m++)
+                                        {
+                                                u8 buf[DB_REC_LEN];
+                                                if (!read_base128(fp, buf, DB_REC_LEN))
+                                                {
+                                                        fclose(fp);
+                                                        return false;
+                                                }
+                                                u32 cmp_ptr;
+                                                void* ptr = mps[i].AllocRec(&cmp_ptr);
+                                                list->data[m] = cmp_ptr;
+                                                memcpy(ptr, buf, DB_REC_LEN);
+                                        }
+                                }
+                        }
+        fclose(fp);
+        return true;
+}

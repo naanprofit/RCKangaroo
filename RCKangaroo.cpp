@@ -54,6 +54,7 @@ char gTamesFileName[1024];
 double gMax;
 bool gGenMode; //tames generation mode
 bool gIsOpsLimit;
+bool gTamesBase128;
 
 #pragma pack(push, 1)
 struct DBRec
@@ -347,21 +348,22 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	double DPs_per_kang = path_single_kang / dp_val;
 	printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
 
-	if (!gGenMode && gTamesFileName[0])
-	{
-		printf("load tames...\r\n");
-		if (db.LoadFromFile(gTamesFileName))
-		{
-			printf("tames loaded\r\n");
-			if (db.Header[0] != gRange)
-			{
-				printf("loaded tames have different range, they cannot be used, clear\r\n");
-				db.Clear();
-			}
-		}
-		else
-			printf("tames loading failed\r\n");
-	}
+        if (!gGenMode && gTamesFileName[0])
+        {
+                printf("load tames...\r\n");
+                bool ok = gTamesBase128 ? db.LoadFromFileBase128(gTamesFileName) : db.LoadFromFile(gTamesFileName);
+                if (ok)
+                {
+                        printf("tames loaded\r\n");
+                        if (db.Header[0] != gRange)
+                        {
+                                printf("loaded tames have different range, they cannot be used, clear\r\n");
+                                db.Clear();
+                        }
+                }
+                else
+                        printf("tames loading failed\r\n");
+        }
 
 	SetRndSeed(0); //use same seed to make tames from file compatible
 	PntTotalOps = 0;
@@ -481,13 +483,14 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	{
 		if (gGenMode)
 		{
-			printf("saving tames...\r\n");
-			db.Header[0] = gRange; 
-			if (db.SaveToFile(gTamesFileName))
-				printf("tames saved\r\n");
-			else
-				printf("tames saving failed\r\n");
-		}
+                        printf("saving tames...\r\n");
+                        db.Header[0] = gRange;
+                        bool ok = gTamesBase128 ? db.SaveToFileBase128(gTamesFileName) : db.SaveToFile(gTamesFileName);
+                        if (ok)
+                                printf("tames saved\r\n");
+                        else
+                                printf("tames saving failed\r\n");
+                }
 		db.Clear();
 		return false;
 	}
@@ -572,13 +575,20 @@ bool ParseCommandLine(int argc, char* argv[])
 			ci++;
 		}
 		else
-		if (strcmp(argument, "-tames") == 0)
-		{
-			strcpy(gTamesFileName, argv[ci]);
-			ci++;
-		}
-		else
-		if (strcmp(argument, "-max") == 0)
+                if (strcmp(argument, "-tames128") == 0)
+                {
+                        gTamesBase128 = true;
+                        strcpy(gTamesFileName, argv[ci]);
+                        ci++;
+                }
+                else
+                if (strcmp(argument, "-tames") == 0)
+                {
+                        strcpy(gTamesFileName, argv[ci]);
+                        ci++;
+                }
+                else
+                if (strcmp(argument, "-max") == 0)
 		{
 			double val = atof(argv[ci]);
 			ci++;

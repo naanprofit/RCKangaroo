@@ -63,7 +63,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 		//L2	
 		int L2size = Kparams.KangCnt * (3 * 32);
 		total_mem += L2size;
-		err = cudaMalloc((void**)&Kparams.L2, L2size);
+		err = cudaMallocManaged((void**)&Kparams.L2, L2size);
 		if (err != cudaSuccess)
 		{
 			printf("GPU %d, Allocate L2 memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -89,7 +89,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	}
 	size = MAX_DP_CNT * GPU_DP_SIZE + 16;
 	total_mem += size;
-	err = cudaMalloc((void**)&Kparams.DPs_out, size);
+	err = cudaMallocManaged((void**)&Kparams.DPs_out, size);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate GpuOut memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -98,7 +98,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 
 	size = KangCnt * 96;
 	total_mem += size;
-	err = cudaMalloc((void**)&Kparams.Kangs, size);
+	err = cudaMallocManaged((void**)&Kparams.Kangs, size);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate pKangs memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -106,7 +106,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	}
 
 	total_mem += JMP_CNT * 96;
-	err = cudaMalloc((void**)&Kparams.Jumps1, JMP_CNT * 96);
+	err = cudaMallocManaged((void**)&Kparams.Jumps1, JMP_CNT * 96);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate Jumps1 memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -114,7 +114,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	}
 
 	total_mem += JMP_CNT * 96;
-	err = cudaMalloc((void**)&Kparams.Jumps2, JMP_CNT * 96);
+	err = cudaMallocManaged((void**)&Kparams.Jumps2, JMP_CNT * 96);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate Jumps1 memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -122,7 +122,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	}
 
 	total_mem += JMP_CNT * 96;
-	err = cudaMalloc((void**)&Kparams.Jumps3, JMP_CNT * 96);
+	err = cudaMallocManaged((void**)&Kparams.Jumps3, JMP_CNT * 96);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate Jumps3 memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -131,7 +131,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 
 	size = 2 * (u64)KangCnt * STEP_CNT;
 	total_mem += size;
-	err = cudaMalloc((void**)&Kparams.JumpsList, size);
+	err = cudaMallocManaged((void**)&Kparams.JumpsList, size);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate JumpsList memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -140,7 +140,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 
 	size = (u64)KangCnt * (16 * DPTABLE_MAX_CNT + sizeof(u32)); //we store 16bytes of X
 	total_mem += size;
-	err = cudaMalloc((void**)&Kparams.DPTable, size);
+	err = cudaMallocManaged((void**)&Kparams.DPTable, size);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate DPTable memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -149,7 +149,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 
 	size = mpCnt * Kparams.BlockSize * sizeof(u64);
 	total_mem += size;
-	err = cudaMalloc((void**)&Kparams.L1S2, size);
+	err = cudaMallocManaged((void**)&Kparams.L1S2, size);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate L1S2 memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -158,7 +158,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 
 	size = (u64)KangCnt * MD_LEN * (2 * 32);
 	total_mem += size;
-	err = cudaMalloc((void**)&Kparams.LastPnts, size);
+	err = cudaMallocManaged((void**)&Kparams.LastPnts, size);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate LastPnts memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -167,7 +167,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 
 	size = (u64)KangCnt * MD_LEN * sizeof(u64);
 	total_mem += size;
-	err = cudaMalloc((void**)&Kparams.LoopTable, size);
+	err = cudaMallocManaged((void**)&Kparams.LoopTable, size);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate LastPnts memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -175,7 +175,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	}
 
 	total_mem += 1024;
-	err = cudaMalloc((void**)&Kparams.dbg_buf, 1024);
+	err = cudaMallocManaged((void**)&Kparams.dbg_buf, 1024);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate dbg_buf memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -184,7 +184,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 
 	size = sizeof(u32) * KangCnt + 8;
 	total_mem += size;
-	err = cudaMalloc((void**)&Kparams.LoopedKangs, size);
+	err = cudaMallocManaged((void**)&Kparams.LoopedKangs, size);
 	if (err != cudaSuccess)
 	{
 		printf("GPU %d Allocate LoopedKangs memory failed: %s\n", CudaIndex, cudaGetErrorString(err));
