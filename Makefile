@@ -13,11 +13,15 @@ CPP_OBJECTS := $(CPU_SRC:.cpp=.o)
 CU_OBJECTS := $(GPU_SRC:.cu=.o)
 
 TARGET := rckangaroo
+TAMESGEN := tames_gen
 
-all: $(TARGET)
+all: $(TARGET) $(TAMESGEN)
 
 $(TARGET): $(CPP_OBJECTS) $(CU_OBJECTS)
 	$(CC) $(CCFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(TAMESGEN): tames_gen.o utils.o
+	$(CC) $(CCFLAGS) -o $@ $^
 
 %.o: %.cpp
 	$(CC) $(CCFLAGS) -c $< -o $@
@@ -26,4 +30,4 @@ $(TARGET): $(CPP_OBJECTS) $(CU_OBJECTS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(CPP_OBJECTS) $(CU_OBJECTS)
+	rm -f $(CPP_OBJECTS) $(CU_OBJECTS) tames_gen.o $(TARGET) $(TAMESGEN)

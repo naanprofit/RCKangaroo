@@ -13,6 +13,9 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 - Keeps DP overhead as small as possible.
 - Supports ranges up to 170 bits.
 - Both Windows and Linux are supported.
+- Uses CUDA unified memory to fall back to system RAM when GPU memory is
+  exhausted, allowing processing of much larger key ranges on systems with
+  ample host memory.
 
 <b>Limitations:</b>
 
@@ -45,6 +48,17 @@ Sample command to generate tames:
 RCKangaroo.exe -dp 16 -range 76 -tames tames76.dat -max 10
 
 Then you can restart software with same parameters to see less K in benchmark mode or add "-tames tames76.dat" to solve some public key in 76-bit range faster.
+
+A helper utility `tames_gen` is provided to build tames files from a text
+file containing base128 encoded records. Each line should contain a
+base128 representation of a 35-byte block (3-byte prefix + 32 bytes of
+data). Example:
+
+```
+./tames_gen input.txt tames76.dat
+```
+
+The generated file can then be used with the `-tames` option.
 
 <b>Some notes:</b>
 
