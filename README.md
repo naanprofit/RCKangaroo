@@ -32,8 +32,7 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-max</b>		option to limit max number of operations. For example, value 5.5 limits number of operations to 5.5 * 1.15 * sqrt(range), software stops when the limit is reached. 
 
-<b>-tames</b>		filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. If the file is found, software loads tames to speedup solving. 
-<b>-tames128</b>        same as -tames but expects the file to be in base128 format.
+<b>-tames</b>		filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. If the file is found, software loads tames to speedup solving. The program first attempts to load a binary file and automatically falls back to Base128 if needed. 
 
 When public key is solved, software displays it and also writes it to "RESULTS.TXT" file. 
 
