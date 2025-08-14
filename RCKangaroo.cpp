@@ -212,7 +212,11 @@ void CheckNewPoints()
 		memcpy(nrec.d, p + 16, 22);
 		nrec.type = gGenMode ? TAME : p[40];
 
-		DBRec* pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
+                DBRec* pref;
+                if (db.IsMapped())
+                        pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                else
+                        pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
 		if (gGenMode)
 			continue;
 		if (pref)
@@ -351,13 +355,20 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
         if (!gGenMode && gTamesFileName[0])
         {
                 printf("load tames...\r\n");
-                bool ok = db.LoadFromFile(gTamesFileName);
+                bool ok = db.OpenMapped(gTamesFileName);
                 if (!ok)
                 {
-                        printf("binary tames loading failed, trying Base128...\r\n");
-                        ok = db.LoadFromFileBase128(gTamesFileName);
-                        if (ok)
-                                gTamesBase128 = true;
+                        printf("memory-mapped tames failed, loading into RAM...\r\n");
+                        ok = db.LoadFromFile(gTamesFileName);
+                        if (!ok)
+                        {
+                                printf("binary tames loading failed, trying Base128...\r\n");
+                                ok = db.LoadFromFileBase128(gTamesFileName);
+                                if (ok)
+                                        gTamesBase128 = true;
+                        }
+                        else
+                                gTamesBase128 = false;
                 }
                 else
                         gTamesBase128 = false;
@@ -768,6 +779,7 @@ int main(int argc, char* argv[])
 		}
 	}
 label_end:
+        db.CloseMapped();
 	for (int i = 0; i < GpuCnt; i++)
 		delete GpuKangs[i];
 	DeInitEc();

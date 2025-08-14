@@ -1,4 +1,4 @@
-// Simple utility to generate a base128 encoded tames file
+// Simple utility to generate a tames file
 // This tool creates random tames records for testing purposes.
 
 #include <stdio.h>
@@ -13,6 +13,7 @@
 int main(int argc, char* argv[])
 {
         int range = 0;
+        bool base128 = false;
         int ci = 1;
         while (ci < argc && argv[ci][0] == '-')
         {
@@ -22,22 +23,26 @@ int main(int argc, char* argv[])
                 {
                         if (ci >= argc)
                         {
-                                printf("Usage: %s -range <bits(32-170)> <output_file> <count>\n", argv[0]);
+                                printf("Usage: %s -range <bits(32-170)> [-base128] <output_file> <count>\n", argv[0]);
                                 return 1;
                         }
                         range = atoi(argv[ci]);
                         ci++;
                 }
+                else if (strcmp(argument, "-base128") == 0)
+                {
+                        base128 = true;
+                }
                 else
                 {
-                        printf("Usage: %s -range <bits(32-170)> <output_file> <count>\n", argv[0]);
+                        printf("Usage: %s -range <bits(32-170)> [-base128] <output_file> <count>\n", argv[0]);
                         return 1;
                 }
         }
 
         if ((range < 32) || (range > 170) || (argc - ci < 2))
         {
-                printf("Usage: %s -range <bits(32-170)> <output_file> <count>\n", argv[0]);
+                printf("Usage: %s -range <bits(32-170)> [-base128] <output_file> <count>\n", argv[0]);
                 return 1;
         }
 
@@ -60,7 +65,8 @@ int main(int argc, char* argv[])
                 db->AddDataBlock(data);
         }
 
-        if (db->SaveToFileBase128(out_file))
+        bool ok = base128 ? db->SaveToFileBase128(out_file) : db->SaveToFile(out_file);
+        if (ok)
         {
                 printf("Generated %llu tames to %s\n", (unsigned long long)count, out_file);
                 delete db;
@@ -71,4 +77,3 @@ int main(int argc, char* argv[])
         delete db;
         return 1;
 }
-

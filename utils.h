@@ -86,23 +86,38 @@ public:
 class TFastBase
 {
 private:
-	MemPool mps[256];
-	TListRec lists[256][256][256];
-	int lower_bound(TListRec* list, int mps_ind, u8* data);
-public:
-	u8 Header[256];
+        MemPool mps[256];
+        TListRec lists[256][256][256];
+        int lower_bound(TListRec* list, int mps_ind, u8* data);
+        int lower_bound_mapped(TListRec* list, u8* data);
 
-	TFastBase();
-	~TFastBase();
-	void Clear();
-	u8* AddDataBlock(u8* data, int pos = -1);
-	u8* FindDataBlock(u8* data);
-	u8* FindOrAddDataBlock(u8* data);
+#ifdef _WIN32
+        HHANDLER hFile;
+        HHANDLER hMap;
+#else
+        int fd;
+#endif
+        u8* mapped_ptr;
+        size_t mapped_size;
+        bool mapped_mode;
+public:
+        u8 Header[256];
+
+        TFastBase();
+        ~TFastBase();
+        void Clear();
+        u8* AddDataBlock(u8* data, int pos = -1);
+        u8* FindDataBlock(u8* data);
+        u8* FindOrAddDataBlock(u8* data);
         u64 GetBlockCnt();
         bool LoadFromFile(char* fn);
         bool SaveToFile(char* fn);
         bool LoadFromFileBase128(char* fn);
         bool SaveToFileBase128(char* fn);
+        bool OpenMapped(char* fn);
+        void CloseMapped();
+        u8* FindDataBlockMapped(u8* data);
+        bool IsMapped();
 };
 
 bool IsFileExist(char* fn);

@@ -6,6 +6,11 @@
 
 #include "utils.h"
 #include <wchar.h>
+#ifndef _WIN32
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#endif
 
 #ifdef _WIN32
 
@@ -112,30 +117,41 @@ void* MemPool::GetRecPtr(u32 cmp_ptr)
 
 TFastBase::TFastBase()
 {
-	memset(lists, 0, sizeof(lists));
-	memset(Header, 0, sizeof(Header));
+        memset(lists, 0, sizeof(lists));
+        memset(Header, 0, sizeof(Header));
+#ifdef _WIN32
+        hFile = NULL;
+        hMap = NULL;
+#else
+        fd = -1;
+#endif
+        mapped_ptr = NULL;
+        mapped_size = 0;
+        mapped_mode = false;
 }
 
 TFastBase::~TFastBase()
 {
-	Clear();
+        CloseMapped();
+        Clear();
 }
 
 void TFastBase::Clear()
 {
-	for (int i = 0; i < 256; i++)
-	{
-		for (int j = 0; j < 256; j++)
-			for (int k = 0; k < 256; k++)
-			{
-				if (lists[i][j][k].data)
-					free(lists[i][j][k].data);
-				lists[i][j][k].data = NULL;
-				lists[i][j][k].capacity = 0;
-				lists[i][j][k].cnt = 0;
-			}
-		mps[i].Clear();
-	}
+        for (int i = 0; i < 256; i++)
+        {
+                for (int j = 0; j < 256; j++)
+                        for (int k = 0; k < 256; k++)
+                        {
+                                if (!mapped_mode && lists[i][j][k].data)
+                                        free(lists[i][j][k].data);
+                                lists[i][j][k].data = NULL;
+                                lists[i][j][k].capacity = 0;
+                                lists[i][j][k].cnt = 0;
+                        }
+                if (!mapped_mode)
+                        mps[i].Clear();
+        }
 }
 
 u64 TFastBase::GetBlockCnt()
@@ -311,6 +327,28 @@ bool IsFileExist(char* fn)
 	return true;
 }
 
+int TFastBase::lower_bound_mapped(TListRec* list, u8* data)
+{
+        int count = list->cnt;
+        int it, first, step;
+        first = 0;
+        while (count > 0)
+        {
+                it = first;
+                step = count / 2;
+                it += step;
+                void* ptr = (u8*)list->data + DB_REC_LEN * it;
+                if (memcmp(ptr, data, DB_FIND_LEN) < 0)
+                {
+                        first = ++it;
+                        count -= step + 1;
+                }
+                else
+                        count = step;
+        }
+        return first;
+}
+
 static bool write_base128(FILE* fp, const u8* data, size_t len)
 {
         int bits = 0;
@@ -444,4 +482,110 @@ bool TFastBase::LoadFromFileBase128(char* fn)
                         }
         fclose(fp);
         return true;
+}
+
+bool TFastBase::OpenMapped(char* fn)
+{
+        if (mapped_mode)
+                CloseMapped();
+        Clear();
+#ifdef _WIN32
+        hFile = CreateFileA(fn, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hFile == INVALID_HANDLE_VALUE)
+                return false;
+        mapped_size = GetFileSize(hFile, NULL);
+        hMap = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+        if (!hMap)
+        {
+                CloseHandle(hFile);
+                hFile = NULL;
+                return false;
+        }
+        mapped_ptr = (u8*)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+        if (!mapped_ptr)
+        {
+                CloseHandle(hMap);
+                CloseHandle(hFile);
+                hMap = NULL;
+                hFile = NULL;
+                return false;
+        }
+#else
+        fd = open(fn, O_RDONLY);
+        if (fd < 0)
+                return false;
+        struct stat st;
+        if (fstat(fd, &st) < 0)
+        {
+                close(fd);
+                fd = -1;
+                return false;
+        }
+        mapped_size = st.st_size;
+        mapped_ptr = (u8*)mmap(NULL, mapped_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (mapped_ptr == MAP_FAILED)
+        {
+                close(fd);
+                fd = -1;
+                return false;
+        }
+#endif
+        mapped_mode = true;
+        u8* p = mapped_ptr;
+        memcpy(Header, p, sizeof(Header));
+        p += sizeof(Header);
+        for (int i = 0; i < 256; i++)
+                for (int j = 0; j < 256; j++)
+                        for (int k = 0; k < 256; k++)
+                        {
+                                u16 cnt = p[0] | (p[1] << 8);
+                                lists[i][j][k].cnt = cnt;
+                                lists[i][j][k].capacity = 0;
+                                lists[i][j][k].data = (u32*)(p + 2);
+                                p += 2 + cnt * DB_REC_LEN;
+                        }
+        return true;
+}
+
+void TFastBase::CloseMapped()
+{
+        if (!mapped_mode)
+                return;
+        Clear();
+#ifdef _WIN32
+        if (mapped_ptr)
+                UnmapViewOfFile(mapped_ptr);
+        if (hMap)
+                CloseHandle(hMap);
+        if (hFile)
+                CloseHandle(hFile);
+        hMap = NULL;
+        hFile = NULL;
+#else
+        if (mapped_ptr)
+                munmap(mapped_ptr, mapped_size);
+        if (fd >= 0)
+                close(fd);
+        fd = -1;
+#endif
+        mapped_ptr = NULL;
+        mapped_size = 0;
+        mapped_mode = false;
+}
+
+u8* TFastBase::FindDataBlockMapped(u8* data)
+{
+        TListRec* list = &lists[data[0]][data[1]][data[2]];
+        int first = lower_bound_mapped(list, data + 3);
+        if (first == list->cnt)
+                return NULL;
+        u8* ptr = (u8*)list->data + DB_REC_LEN * first;
+        if (memcmp(ptr, data + 3, DB_FIND_LEN))
+                return NULL;
+        return ptr;
+}
+
+bool TFastBase::IsMapped()
+{
+        return mapped_mode;
 }
