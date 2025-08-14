@@ -351,7 +351,16 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
         if (!gGenMode && gTamesFileName[0])
         {
                 printf("load tames...\r\n");
-                bool ok = gTamesBase128 ? db.LoadFromFileBase128(gTamesFileName) : db.LoadFromFile(gTamesFileName);
+                bool ok = db.LoadFromFile(gTamesFileName);
+                if (!ok)
+                {
+                        printf("binary tames loading failed, trying Base128...\r\n");
+                        ok = db.LoadFromFileBase128(gTamesFileName);
+                        if (ok)
+                                gTamesBase128 = true;
+                }
+                else
+                        gTamesBase128 = false;
                 if (ok)
                 {
                         printf("tames loaded\r\n");
@@ -575,13 +584,6 @@ bool ParseCommandLine(int argc, char* argv[])
 			ci++;
 		}
 		else
-                if (strcmp(argument, "-tames128") == 0)
-                {
-                        gTamesBase128 = true;
-                        strcpy(gTamesFileName, argv[ci]);
-                        ci++;
-                }
-                else
                 if (strcmp(argument, "-tames") == 0)
                 {
                         strcpy(gTamesFileName, argv[ci]);
@@ -648,12 +650,13 @@ int main(int argc, char* argv[])
 
 	InitEc();
 	gDP = 0;
-	gRange = 0;
-	gStartSet = false;
-	gTamesFileName[0] = 0;
-	gMax = 0.0;
-	gGenMode = false;
-	gIsOpsLimit = false;
+        gRange = 0;
+        gStartSet = false;
+        gTamesFileName[0] = 0;
+        gTamesBase128 = false;
+        gMax = 0.0;
+        gGenMode = false;
+        gIsOpsLimit = false;
 	memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
 	if (!ParseCommandLine(argc, argv))
 		return 0;
