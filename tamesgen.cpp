@@ -16,23 +16,25 @@ int main(int argc, char* argv[])
         }
 
         int count = atoi(argv[2]);
-        TFastBase db;
+        TFastBase* db = new TFastBase();
 
         for (int i = 0; i < count; i++)
         {
                 u8 data[3 + DB_REC_LEN];
                 for (int j = 0; j < 3 + DB_REC_LEN; j++)
                         data[j] = rand() & 0xFF;
-                db.AddDataBlock(data);
+                db->AddDataBlock(data);
         }
 
-        if (db.SaveToFileBase128(argv[1]))
+        if (db->SaveToFileBase128(argv[1]))
         {
                 printf("Generated %d tames to %s\n", count, argv[1]);
+                delete db;
                 return 0;
         }
 
         printf("Failed to save tames\n");
+        delete db;
         return 1;
 }
 
