@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <errno.h>
 #include <string.h>
 #include "utils.h"
 
@@ -40,11 +42,17 @@ int main(int argc, char* argv[])
         }
 
         char* out_file = argv[ci];
-        int count = atoi(argv[ci + 1]);
+        errno = 0;
+        uint64_t count = strtoull(argv[ci + 1], NULL, 10);
+        if (errno == ERANGE)
+        {
+                printf("Count exceeds supported limits\n");
+                return 1;
+        }
         TFastBase* db = new TFastBase();
         db->Header[0] = range;
 
-        for (int i = 0; i < count; i++)
+        for (uint64_t i = 0; i < count; i++)
         {
                 u8 data[3 + DB_REC_LEN];
                 for (int j = 0; j < 3 + DB_REC_LEN; j++)
@@ -54,7 +62,7 @@ int main(int argc, char* argv[])
 
         if (db->SaveToFileBase128(out_file))
         {
-                printf("Generated %d tames to %s\n", count, out_file);
+                printf("Generated %llu tames to %s\n", (unsigned long long)count, out_file);
                 delete db;
                 return 0;
         }
