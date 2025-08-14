@@ -43,9 +43,9 @@ RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a
 Sample command to generate tames:
 
 RCKangaroo.exe -dp 16 -range 76 -tames tames76.dat -max 10
-You can also quickly generate a base128 tames file using the helper tool:
+You can also quickly generate a base128 tames file using the helper tool (count parameter supports 64-bit values):
 
-./tamesgen mytames.dat 1000
+./tamesgen mytames.dat 10000000000
 
 Then you can restart software with same parameters to see less K in benchmark mode or add "-tames tames76.dat" to solve some public key in 76-bit range faster.
 
