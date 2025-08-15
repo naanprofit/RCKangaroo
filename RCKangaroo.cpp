@@ -544,14 +544,23 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 //prepare GPUs
         int gpuDP = gMultiDP ? (DP - gDpCoarseOffset) : DP;
         for (int i = 0; i < GpuCnt; i++)
+        {
                 if (!GpuKangs[i]->Prepare(PntToSolve, Range, gpuDP, EcJumps1, EcJumps2, EcJumps3, gPhiFold))
                 {
                         GpuKangs[i]->Failed = true;
                         printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
+                        if (gGenMode && gTamesWriter)
+                        {
+                                TamesRecordWriterClose(gTamesWriter);
+                                gTamesWriter = NULL;
+                        }
+                        db.Clear();
+                        return false;
                 }
+        }
 
-	u64 tm0 = GetTickCount64();
-	printf("GPUs started...\r\n");
+        u64 tm0 = GetTickCount64();
+        printf("GPUs started...\r\n");
 
 #ifdef _WIN32
 	HANDLE thr_handles[MAX_GPU_CNT];
@@ -1137,14 +1146,23 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 
 //prepare GPUs
         for (int i = 0; i < GpuCnt; i++)
+        {
                 if (!GpuKangs[i]->Prepare(PntToSolve, Range, DP, EcJumps1, EcJumps2, EcJumps3, gPhiFold))
                 {
                         GpuKangs[i]->Failed = true;
                         printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
+                        if (gGenMode && gTamesWriter)
+                        {
+                                TamesRecordWriterClose(gTamesWriter);
+                                gTamesWriter = NULL;
+                        }
+                        db.Clear();
+                        return false;
                 }
+        }
 
-	u64 tm0 = GetTickCount64();
-	printf("GPUs started...\r\n");
+        u64 tm0 = GetTickCount64();
+        printf("GPUs started...\r\n");
 
 #ifdef _WIN32
 	HANDLE thr_handles[MAX_GPU_CNT];
