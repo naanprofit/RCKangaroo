@@ -357,40 +357,7 @@ void CheckNewPoints()
         }
 }
 
-void ShowStats(u64 tm_start, double exp_ops, double dp_val)
-{
-#ifdef DEBUG_MODE
-	for (int i = 0; i <= MD_LEN; i++)
-	{
-		u64 val = 0;
-		for (int j = 0; j < GpuCnt; j++)
-		{
-			val += GpuKangs[j]->dbg[i];
-		}
-		if (val)
-			printf("Loop size %d: %llu\r\n", i, val);
-	}
-#endif
-
-	int speed = GpuKangs[0]->GetStatsSpeed();
-	for (int i = 1; i < GpuCnt; i++)
-		speed += GpuKangs[i]->GetStatsSpeed();
-
-	u64 est_dps_cnt = (u64)(exp_ops / dp_val);
-	u64 exp_sec = 0xFFFFFFFFFFFFFFFFull;
-	if (speed)
-		exp_sec = (u64)((exp_ops / 1000000) / speed); //in sec
-	u64 exp_days = exp_sec / (3600 * 24);
-	int exp_hours = (int)(exp_sec - exp_days * (3600 * 24)) / 3600;
-	int exp_min = (int)(exp_sec - exp_days * (3600 * 24) - exp_hours * 3600) / 60;
-
-	u64 sec = (GetTickCount64() - tm_start) / 1000;
-	u64 days = sec / (3600 * 24);
-	int hours = (int)(sec - days * (3600 * 24)) / 3600;
-	int min = (int)(sec - days * (3600 * 24) - hours * 3600) / 60;
-	 
-	printf("%sSpeed: %d MKeys/s, Err: %d, DPs: %lluK/%lluK, Time: %llud:%02dh:%02dm/%llud:%02dh:%02dm\r\n", gGenMode ? "GEN: " : (IsBench ? "BENCH: " : "MAIN: "), speed, gTotalErrors, db.GetBlockCnt()/1000, est_dps_cnt/1000, days, hours, min, exp_days, exp_hours, exp_min);
-}
+void ShowStats(u64 tm_start, double exp_ops, double dp_val);
 
 #if 0
 bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
