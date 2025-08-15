@@ -504,19 +504,25 @@ __device__ __forceinline__ bool is_less_u256(const u64* a, const u64* b)
     return a[0] < b[0];
 }
 
-__device__ __forceinline__ u32 pick_phi_k_and_xcan(u64* xin, u64* x_can)
+__device__ __forceinline__ u32 pick_phi_k_and_xcan(u64* xin, u64* x_can, u32 mode)
 {
     __align__(16) u64 x[4];
     Copy_u64_x4(x, xin);
 
-    __align__(16) u64 xb1[4], xb2[4];
-    MulModP(xb1, x, BETA);
-    MulModP(xb2, x, BETA2);
-
     u32 k = 0;
     Copy_u64_x4(x_can, x);
-    if (is_less_u256(xb1, x_can)) { k = 1; Copy_u64_x4(x_can, xb1); }
-    if (is_less_u256(xb2, x_can)) { k = 2; Copy_u64_x4(x_can, xb2); }
+    if (mode > 0)
+    {
+        __align__(16) u64 xb1[4];
+        MulModP(xb1, x, BETA);
+        if (is_less_u256(xb1, x_can)) { k = 1; Copy_u64_x4(x_can, xb1); }
+        if (mode > 1)
+        {
+            __align__(16) u64 xb2[4];
+            MulModP(xb2, x, BETA2);
+            if (is_less_u256(xb2, x_can)) { k = 2; Copy_u64_x4(x_can, xb2); }
+        }
+    }
     return k;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -534,7 +540,7 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
         __align__(16) u64 x_can[4];
         u32 k;
         if (Kparams.PhiFold)
-                k = pick_phi_k_and_xcan(x_full, x_can);
+                k = pick_phi_k_and_xcan(x_full, x_can, Kparams.PhiFold);
         else
         {
                 Copy_u64_x4(x_can, x_full);

@@ -36,7 +36,7 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-base128</b>        when generating tames, save the output file in Base128 format instead of the default binary format.
 
-<b>--phi-fold</b>      fold points under the secp256k1 endomorphism φ when generating tames (non-zero to enable, 0 to disable; default enabled). Example: "--phi-fold 2" uses both P and φ(P) to shrink the tame set and improve cache locality.
+<b>--phi-fold N</b>    fold points under the secp256k1 endomorphism φ when generating tames. 0 disables folding. 1 (default) folds P with φ(P); 2 also considers φ²(P). Higher values are clamped to 2.
 
 <b>--multi-dp</b>      allow multiple distinguished-point tables (1 to enable, 0 to disable). Disabling may save memory at the cost of more DP collisions.
 
@@ -66,7 +66,7 @@ RCKangaroo.exe -dp 16 -range 76 -tames tames76.dat -max 10 -base128
   save the generated tames in Base128 format.
 
 RCKangaroo.exe -dp 16 -range 76 -tames t76.dat -max 10 --phi-fold 2
-  fold each point with its φ(P) image to reduce the table size.
+  fold each point with its φ(P) and φ²(P) images to reduce the table size.
 
 RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a4fd8c810b7e42a4b398882b381bcd85e40c6883712912d167c83e73a --multi-dp 1 --bloom-mbits 27 --bloom-k 4
   enable multiple DP tables and tune the Bloom filter parameters.
