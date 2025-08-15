@@ -36,6 +36,14 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-base128</b>        when generating tames, save the output file in Base128 format instead of the default binary format.
 
+<b>--phi-fold</b>      fold points under the secp256k1 endomorphism φ when generating tames. Example: "--phi-fold 2" uses both P and φ(P) to shrink the tame set and improve cache locality.
+
+<b>--multi-dp</b>      allow multiple distinguished-point tables (1 to enable, 0 to disable). Disabling may save memory at the cost of more DP collisions.
+
+<b>--bloom-mbits</b>   size of the Bloom filter in bits, expressed as a power of two. "--bloom-mbits 27" allocates 2^27 bits (~16 MB).
+
+<b>--bloom-k</b>       number of hash functions used by the Bloom filter. Higher values reduce false positives but increase hashing cost.
+
 When public key is solved, software displays it and also writes it to "RESULTS.TXT" file. 
 
 Sample command line for puzzle #85:
@@ -51,6 +59,26 @@ You can also quickly generate a tames file using the helper tool (count paramete
 Add the <code>-base128</code> flag to emit a Base128 encoded file instead of the default binary format.
 
 Then you can restart software with same parameters to see less K in benchmark mode or add "-tames tames76.dat" to solve some public key in 76-bit range faster.
+
+Examples of additional options:
+
+RCKangaroo.exe -dp 16 -range 76 -tames tames76.dat -max 10 -base128
+  save the generated tames in Base128 format.
+
+RCKangaroo.exe -dp 16 -range 76 -tames t76.dat -max 10 --phi-fold 2
+  fold each point with its φ(P) image to reduce the table size.
+
+RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a4fd8c810b7e42a4b398882b381bcd85e40c6883712912d167c83e73a --multi-dp 1 --bloom-mbits 27 --bloom-k 4
+  enable multiple DP tables and tune the Bloom filter parameters.
+
+Binary tames load much faster because the OS can memory-map them directly. Base128 files are smaller but must be decoded at
+startup. Switch between the formats by regenerating the file with or without the <code>-base128</code> flag.
+
+<b>Binary tames header format:</b>
+
+Binary files begin with the following structure (little-endian unless the flag bit 0 is cleared):
+magic="PMAP" | version=1 | stride=DP record size | flags | rec_cnt
+Bits 8..15 of <code>flags</code> encode the bit range shift. See <code>utils.h</code> for details.
 
 <b>Some notes:</b>
 
