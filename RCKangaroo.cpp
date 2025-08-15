@@ -527,7 +527,11 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		{
                         printf("saving tames...\r\n");
                         db.Header[0] = gRange;
-                        bool ok = gTamesBase128 ? db.SaveToFileBase128(gTamesFileName) : db.SaveToFile(gTamesFileName);
+                        bool ok;
+                        if (gTamesBase128)
+                                ok = db.SaveToFileBase128(gTamesFileName);
+                        else
+                                ok = db.SaveToFile(gTamesFileName);
                         if (ok)
                                 printf("tames saved\r\n");
                         else
@@ -624,22 +628,27 @@ bool ParseCommandLine(int argc, char* argv[])
                 }
                 else
                 if (strcmp(argument, "-max") == 0)
-		{
-			double val = atof(argv[ci]);
-			ci++;
-			if (val < 0.001)
-			{
-				printf("error: invalid value for -max option\r\n");
-				return false;
-			}
-			gMax = val;
-		}
-		else
-		{
-			printf("error: unknown option %s\r\n", argument);
-			return false;
-		}
-	}
+                {
+                        double val = atof(argv[ci]);
+                        ci++;
+                        if (val < 0.001)
+                        {
+                                printf("error: invalid value for -max option\r\n");
+                                return false;
+                        }
+                        gMax = val;
+                }
+                else
+                if (strcmp(argument, "-base128") == 0)
+                {
+                        gTamesBase128 = true;
+                }
+                else
+                {
+                        printf("error: unknown option %s\r\n", argument);
+                        return false;
+                }
+        }
 	if (!gPubKey.x.IsZero())
 		if (!gStartSet || !gRange || !gDP)
 		{

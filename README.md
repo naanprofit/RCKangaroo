@@ -34,6 +34,8 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-tames</b>           filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. If the file is found, software memory-maps the binary tames to speed up access and automatically falls back to in-memory loading or Base128 if needed.
 
+<b>-base128</b>        when generating tames, save the output file in Base128 format instead of the default binary format.
+
 When public key is solved, software displays it and also writes it to "RESULTS.TXT" file. 
 
 Sample command line for puzzle #85:
