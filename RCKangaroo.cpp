@@ -252,8 +252,8 @@ void CheckNewPoints()
 
                 DBRec nrec;
                 memcpy(nrec.x, p, 12);
-                memcpy(nrec.d, p + 16, 22);
-                u8 type_byte = gGenMode ? TAME : p[40];
+                memcpy(nrec.d, p + 32, 22);
+                u8 type_byte = gGenMode ? TAME : p[56];
                 u8 nrec_k = type_byte >> 2;
                 u8 nrec_type = type_byte & 3;
                 nrec.type = type_byte;

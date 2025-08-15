@@ -549,14 +549,15 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
                 k = 0;
         }
         rx[0] = ((int4*)x_can)[0];
-        rx[1] = make_int4(0, 0, 0, 0);
+        rx[1] = ((int4*)x_can)[1];
         u32 pos = atomicAdd(Kparams.DPs_out, 1);
         pos = min(pos, MAX_DP_CNT - 1);
         u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
         *(int4*)&DPs[0] = ((int4*)x_can)[0];
-        *(int4*)&DPs[4] = ((int4*)d)[0];
-        *(u64*)&DPs[8] = d[2];
-        DPs[10] = (k << 2) | (3 * kang_ind / Kparams.KangCnt); //kang type + phi k
+        *(int4*)&DPs[4] = ((int4*)x_can)[1];
+        *(int4*)&DPs[8] = ((int4*)d)[0];
+        *(u64*)&DPs[12] = d[2];
+        DPs[14] = (k << 2) | (3 * kang_ind / Kparams.KangCnt); //kang type + phi k
 }
 
 __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64* d, u32 kang_ind, u64* jmp1_d, u64* jmp2_d, const TKparams& Kparams, u64* table, u32* cur_ind, u8 iter)
