@@ -182,13 +182,13 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 		gPrivKey.Sub(w);
 		EcInt sv = gPrivKey;
 		gPrivKey.Add(Int_HalfRange);
-		EcPoint P = ec.MultiplyG(gPrivKey);
+            EcPoint P = ec.MultiplyG_GLV(gPrivKey);
 		if (P.IsEqual(pnt))
 			return true;
 		gPrivKey = sv;
 		gPrivKey.Neg();
 		gPrivKey.Add(Int_HalfRange);
-		P = ec.MultiplyG(gPrivKey);
+            P = ec.MultiplyG_GLV(gPrivKey);
 		return P.IsEqual(pnt);
 	}
 	else
@@ -200,13 +200,13 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 		gPrivKey.ShiftRight(1);
 		EcInt sv = gPrivKey;
 		gPrivKey.Add(Int_HalfRange);
-		EcPoint P = ec.MultiplyG(gPrivKey);
+            EcPoint P = ec.MultiplyG_GLV(gPrivKey);
 		if (P.IsEqual(pnt))
 			return true;
 		gPrivKey = sv;
 		gPrivKey.Neg();
 		gPrivKey.Add(Int_HalfRange);
-		P = ec.MultiplyG(gPrivKey);
+            P = ec.MultiplyG_GLV(gPrivKey);
 		return P.IsEqual(pnt);
 	}
 }
@@ -420,7 +420,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		t.RndMax(minjump);
 		EcJumps1[i].dist.Add(t);
 		EcJumps1[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-		EcJumps1[i].p = ec.MultiplyG(EcJumps1[i].dist);
+            EcJumps1[i].p = ec.MultiplyG_GLV(EcJumps1[i].dist);
 	}
 
 	minjump.Set(1);
@@ -431,7 +431,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		t.RndMax(minjump);
 		EcJumps2[i].dist.Add(t);
 		EcJumps2[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-		EcJumps2[i].p = ec.MultiplyG(EcJumps2[i].dist);
+            EcJumps2[i].p = ec.MultiplyG_GLV(EcJumps2[i].dist);
 	}
 
 	minjump.Set(1);
@@ -442,13 +442,13 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		t.RndMax(minjump);
 		EcJumps3[i].dist.Add(t);
 		EcJumps3[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-		EcJumps3[i].p = ec.MultiplyG(EcJumps3[i].dist);
+            EcJumps3[i].p = ec.MultiplyG_GLV(EcJumps3[i].dist);
 	}
 	SetRndSeed(GetTickCount64());
 
 	Int_HalfRange.Set(1);
 	Int_HalfRange.ShiftLeft(Range - 1);
-	Pnt_HalfRange = ec.MultiplyG(Int_HalfRange);
+    Pnt_HalfRange = ec.MultiplyG_GLV(Int_HalfRange);
 	Pnt_NegHalfRange = Pnt_HalfRange;
 	Pnt_NegHalfRange.y.NegModP();
 	Int_TameOffset.Set(1);
@@ -718,7 +718,7 @@ int main(int argc, char* argv[])
 		PntToSolve = gPubKey;
 		if (!gStart.IsZero())
 		{
-			PntOfs = ec.MultiplyG(gStart);
+                    PntOfs = ec.MultiplyG_GLV(gStart);
 			PntOfs.y.NegModP();
 			PntToSolve = ec.AddPoints(PntToSolve, PntOfs);
 		}
@@ -737,7 +737,7 @@ int main(int argc, char* argv[])
 			goto label_end;
 		}
 		pk_found.AddModP(gStart);
-		EcPoint tmp = ec.MultiplyG(pk_found);
+            EcPoint tmp = ec.MultiplyG_GLV(pk_found);
 		if (!tmp.IsEqual(gPubKey))
 		{
 			printf("FATAL ERROR: SolvePoint found incorrect key\r\n");
@@ -779,7 +779,7 @@ int main(int argc, char* argv[])
 
 			//generate random pk
 			pk.RndBits(gRange);
-			PntToSolve = ec.MultiplyG(pk);
+                    PntToSolve = ec.MultiplyG_GLV(pk);
 
 			if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
 			{

@@ -62,15 +62,20 @@ public:
 class Ec
 {
 public:
-	static EcPoint AddPoints(EcPoint& pnt1, EcPoint& pnt2);
-	static EcPoint DoublePoint(EcPoint& pnt);
-	static EcPoint MultiplyG(EcInt& k);
+        static EcPoint AddPoints(EcPoint& pnt1, EcPoint& pnt2);
+        static EcPoint DoublePoint(EcPoint& pnt);
+        static EcPoint MultiplyG(EcInt& k);
+        static EcPoint MultiplyG_GLV(EcInt& k);
 #ifdef DEBUG_MODE
-	static EcPoint MultiplyG_Fast(EcInt& k);
+        static EcPoint MultiplyG_Fast(EcInt& k);
 #endif
 	static EcInt CalcY(EcInt& x, bool is_even);
-	static bool IsValidPoint(EcPoint& pnt);
+        static bool IsValidPoint(EcPoint& pnt);
 };
+
+// Endomorphism constants for secp256k1
+extern EcInt g_Lambda; // eigenvalue for scalar decomposition
+extern EcInt g_Beta;   // cube root of unity for x-coordinate mapping
 
 void InitEc();
 void DeInitEc();

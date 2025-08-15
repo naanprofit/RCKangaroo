@@ -308,7 +308,7 @@ bool RCGpuKang::Start()
 
 	HalfRange.Set(1);
 	HalfRange.ShiftLeft(Range - 1);
-	PntHalfRange = ec.MultiplyG(HalfRange);
+    PntHalfRange = ec.MultiplyG_GLV(HalfRange);
 	NegPntHalfRange = PntHalfRange;
 	NegPntHalfRange.y.NegModP();
 
@@ -326,7 +326,7 @@ bool RCGpuKang::Start()
 		memcpy(d.data, RndPnts[i].priv, 24);
 		d.data[3] = 0;
 		d.data[4] = 0;
-		EcPoint p = ec.MultiplyG(d);
+            EcPoint p = ec.MultiplyG_GLV(d);
 		memcpy(RndPnts[i].x, p.x.data, 32);
 		memcpy(RndPnts[i].y, p.y.data, 32);
 	}
