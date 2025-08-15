@@ -18,8 +18,10 @@ extern bool gGenMode; //tames generation mode
 extern bool gMultiDP;
 extern int gDpCoarseOffset;
 
+extern "C" {
 extern __device__ __constant__ u64 BETA[4];
 extern __device__ __constant__ u64 BETA2[4];
+}
 
 int RCGpuKang::CalcKangCnt()
 {
@@ -246,14 +248,14 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
         {
                 EcInt beta2 = g_Beta;
                 beta2.MulModP(g_Beta);
-                err = cudaMemcpyToSymbol(BETA, g_Beta.data, 32);
+                err = cudaMemcpyToSymbol("BETA", g_Beta.data, 32);
                 if (err != cudaSuccess)
                 {
                         free(jmp2_table);
                         printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
                         return false;
                 }
-                err = cudaMemcpyToSymbol(BETA2, beta2.data, 32);
+                err = cudaMemcpyToSymbol("BETA2", beta2.data, 32);
                 if (err != cudaSuccess)
                 {
                         free(jmp2_table);
@@ -264,8 +266,20 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
         else
         {
                 u64 zero[4] = { 0, 0, 0, 0 };
-                cudaMemcpyToSymbol(BETA, zero, 32);
-                cudaMemcpyToSymbol(BETA2, zero, 32);
+                err = cudaMemcpyToSymbol("BETA", zero, 32);
+                if (err != cudaSuccess)
+                {
+                        free(jmp2_table);
+                        printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                        return false;
+                }
+                err = cudaMemcpyToSymbol("BETA2", zero, 32);
+                if (err != cudaSuccess)
+                {
+                        free(jmp2_table);
+                        printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                        return false;
+                }
         }
         free(jmp2_table);
 //jmp3
