@@ -61,7 +61,7 @@ char gTamesFileName[1024];
 double gMax;
 bool gGenMode; //tames generation mode
 bool gIsOpsLimit;
-bool gTamesBase128;
+bool gTamesBase128; // legacy Base128 tames format
 bool gMultiDP = true;
 int gDpCoarseOffset = 0;
 int gBloomMBits = 24;
@@ -441,7 +441,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                         ok = db.LoadFromFile(gTamesFileName);
                         if (!ok)
                         {
-                                printf("binary tames loading failed, trying Base128...\r\n");
+                                printf("binary tames loading failed, trying legacy Base128...\r\n");
                                 ok = db.LoadFromFileBase128(gTamesFileName);
                                 if (ok)
                                         gTamesBase128 = true;
@@ -454,7 +454,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                 if (ok)
                 {
                         printf("tames loaded\r\n");
-                        if (db.Header[0] != gRange)
+                        if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
                         {
                                 printf("loaded tames have different range, they cannot be used, clear\r\n");
                                 db.Clear();
@@ -584,7 +584,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		if (gGenMode)
 		{
                         printf("saving tames...\r\n");
-                        db.Header[0] = gRange;
+                        db.Header.flags = (u16)(TAMES_FLAG_LE | (gRange << TAMES_RANGE_SHIFT));
                         bool ok;
                         if (gTamesBase128)
                                 ok = db.SaveToFileBase128(gTamesFileName);
@@ -701,7 +701,7 @@ bool ParseCommandLine(int argc, char* argv[])
                 else
                 if (strcmp(argument, "-base128") == 0)
                 {
-                        gTamesBase128 = true;
+                        gTamesBase128 = true; // use legacy Base128 tames format
                 }
                 else if (strcmp(argument, "--multi-dp") == 0)
                 {
@@ -985,7 +985,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                         ok = db.LoadFromFile(gTamesFileName);
                         if (!ok)
                         {
-                                printf("binary tames loading failed, trying Base128...\r\n");
+                                printf("binary tames loading failed, trying legacy Base128...\r\n");
                                 ok = db.LoadFromFileBase128(gTamesFileName);
                                 if (ok)
                                         gTamesBase128 = true;
@@ -998,7 +998,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                 if (ok)
                 {
                         printf("tames loaded\r\n");
-                        if (db.Header[0] != gRange)
+                        if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
                         {
                                 printf("loaded tames have different range, they cannot be used, clear\r\n");
                                 db.Clear();
@@ -1127,7 +1127,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		if (gGenMode)
 		{
                         printf("saving tames...\r\n");
-                        db.Header[0] = gRange;
+                        db.Header.flags = (u16)(TAMES_FLAG_LE | (gRange << TAMES_RANGE_SHIFT));
                         bool ok;
                         if (gTamesBase128)
                                 ok = db.SaveToFileBase128(gTamesFileName);
@@ -1242,7 +1242,7 @@ bool ParseCommandLine(int argc, char* argv[])
                 else
                 if (strcmp(argument, "-base128") == 0)
                 {
-                        gTamesBase128 = true;
+                        gTamesBase128 = true; // use legacy Base128 tames format
                 }
                 else if (strcmp(argument, "--multi-dp") == 0)
                 {

@@ -118,7 +118,12 @@ void* MemPool::GetRecPtr(u32 cmp_ptr)
 TFastBase::TFastBase()
 {
         memset(lists, 0, sizeof(lists));
-        memset(Header, 0, sizeof(Header));
+        memset(&Header, 0, sizeof(Header));
+        memcpy(Header.magic, TAMES_MAGIC, 4);
+        Header.version = TAMES_VERSION;
+        Header.stride = DB_REC_LEN;
+        Header.flags = TAMES_FLAG_LE;
+        Header.rec_cnt = 0;
 #ifdef _WIN32
         hFile = NULL;
         hMap = NULL;
@@ -152,16 +157,32 @@ void TFastBase::Clear()
                 if (!mapped_mode)
                         mps[i].Clear();
         }
+        Header.rec_cnt = 0;
 }
 
 u64 TFastBase::GetBlockCnt()
 {
-	u64 blockCount = 0;
-	for (int i = 0; i < 256; i++)
-		for (int j = 0; j < 256; j++)
-			for (int k = 0; k < 256; k++)
-			blockCount += lists[i][j][k].cnt;
-	return blockCount;
+        u64 blockCount = 0;
+        for (int i = 0; i < 256; i++)
+                for (int j = 0; j < 256; j++)
+                        for (int k = 0; k < 256; k++)
+                        blockCount += lists[i][j][k].cnt;
+        return blockCount;
+}
+
+static bool validate_header(const TamesHeader& hdr)
+{
+        if (memcmp(hdr.magic, TAMES_MAGIC, 4))
+                return false;
+        if (hdr.version != TAMES_VERSION)
+                return false;
+        if (hdr.stride != DB_REC_LEN)
+                return false;
+        if ((hdr.flags & TAMES_FLAG_LE) == 0)
+                return false;
+        if (hdr.flags & ~(TAMES_FLAG_LE | (0xFF << TAMES_RANGE_SHIFT)))
+                return false;
+        return true;
 }
 
 // http://en.cppreference.com/w/cpp/algorithm/lower_bound
@@ -245,26 +266,37 @@ label_not_found:
 //slow but I hope you are not going to create huge DB with this proof-of-concept software
 bool TFastBase::LoadFromFile(char* fn)
 {
-	Clear();
-	FILE* fp = fopen(fn, "rb");
-	if (!fp)
-		return false;
-	if (fread(Header, 1, sizeof(Header), fp) != sizeof(Header))
-	{
-		fclose(fp);
-		return false;
-	}
-	for (int i = 0; i < 256; i++)
-		for (int j = 0; j < 256; j++)
-			for (int k = 0; k < 256; k++)
-			{
-				TListRec* list = &lists[i][j][k];
-				fread(&list->cnt, 1, 2, fp);
-				if (list->cnt)
-				{
-					u32 grow = list->cnt / 2;
-					if (grow < DB_MIN_GROW_CNT)
-						grow = DB_MIN_GROW_CNT;
+        Clear();
+        FILE* fp = fopen(fn, "rb");
+        if (!fp)
+                return false;
+        if (fread(&Header, 1, sizeof(Header), fp) != sizeof(Header))
+        {
+                fclose(fp);
+                return false;
+        }
+        if (!validate_header(Header))
+        {
+                fclose(fp);
+                return false;
+        }
+        u64 total = 0;
+        for (int i = 0; i < 256; i++)
+                for (int j = 0; j < 256; j++)
+                        for (int k = 0; k < 256; k++)
+                        {
+                                TListRec* list = &lists[i][j][k];
+                                if (fread(&list->cnt, 1, 2, fp) != 2)
+                                {
+                                        fclose(fp);
+                                        return false;
+                                }
+                                total += list->cnt;
+                                if (list->cnt)
+                                {
+                                        u32 grow = list->cnt / 2;
+                                        if (grow < DB_MIN_GROW_CNT)
+                                                grow = DB_MIN_GROW_CNT;
 					u32 newcap = list->cnt + grow;
 					if (newcap > 0xFFFF)
 						newcap = 0xFFFF;
@@ -276,46 +308,50 @@ bool TFastBase::LoadFromFile(char* fn)
 						u32 cmp_ptr;
 						void* ptr = mps[i].AllocRec(&cmp_ptr);
 						list->data[m] = cmp_ptr;
-						if (fread(ptr, 1, DB_REC_LEN, fp) != DB_REC_LEN)
-						{
-							fclose(fp);
-							return false;
-						}
-					}
-				}
-			}
-	fclose(fp);
-	return true;
+                                                if (fread(ptr, 1, DB_REC_LEN, fp) != DB_REC_LEN)
+                                                {
+                                                        fclose(fp);
+                                                        return false;
+                                                }
+                                        }
+                                }
+                        }
+        fclose(fp);
+        return total == Header.rec_cnt;
 }
 
 bool TFastBase::SaveToFile(char* fn)
 {
-	FILE* fp = fopen(fn, "wb");
-	if (!fp)
-		return false;
-	if (fwrite(Header, 1, sizeof(Header), fp) != sizeof(Header))
-	{
-		fclose(fp);
-		return false;
-	}
-	for (int i = 0; i < 256; i++)
-		for (int j = 0; j < 256; j++)
-			for (int k = 0; k < 256; k++)
-			{
-				TListRec* list = &lists[i][j][k];
-				fwrite(&list->cnt, 1, 2, fp);
-				for (int m = 0; m < list->cnt; m++)
-				{
-					void* ptr = mps[i].GetRecPtr(list->data[m]);
-					if (fwrite(ptr, 1, DB_REC_LEN, fp) != DB_REC_LEN)
-					{
-						fclose(fp);
-						return false;
-					}
-				}
-			}
-	fclose(fp);
-	return true;
+        FILE* fp = fopen(fn, "wb");
+        if (!fp)
+                return false;
+        Header.stride = DB_REC_LEN;
+        Header.version = TAMES_VERSION;
+        Header.flags |= TAMES_FLAG_LE;
+        Header.rec_cnt = GetBlockCnt();
+        if (fwrite(&Header, 1, sizeof(Header), fp) != sizeof(Header))
+        {
+                fclose(fp);
+                return false;
+        }
+        for (int i = 0; i < 256; i++)
+                for (int j = 0; j < 256; j++)
+                        for (int k = 0; k < 256; k++)
+                        {
+                                TListRec* list = &lists[i][j][k];
+                                fwrite(&list->cnt, 1, 2, fp);
+                                for (int m = 0; m < list->cnt; m++)
+                                {
+                                        void* ptr = mps[i].GetRecPtr(list->data[m]);
+                                        if (fwrite(ptr, 1, DB_REC_LEN, fp) != DB_REC_LEN)
+                                        {
+                                                fclose(fp);
+                                                return false;
+                                        }
+                                }
+                        }
+        fclose(fp);
+        return true;
 }
 
 bool IsFileExist(char* fn)
@@ -400,7 +436,11 @@ bool TFastBase::SaveToFileBase128(char* fn)
         FILE* fp = fopen(fn, "wb");
         if (!fp)
                 return false;
-        if (!write_base128(fp, Header, sizeof(Header)))
+        Header.stride = DB_REC_LEN;
+        Header.version = TAMES_VERSION;
+        Header.flags |= TAMES_FLAG_LE;
+        Header.rec_cnt = GetBlockCnt();
+        if (!write_base128(fp, (u8*)&Header, sizeof(Header)))
         {
                 fclose(fp);
                 return false;
@@ -438,11 +478,17 @@ bool TFastBase::LoadFromFileBase128(char* fn)
         FILE* fp = fopen(fn, "rb");
         if (!fp)
                 return false;
-        if (!read_base128(fp, Header, sizeof(Header)))
+        if (!read_base128(fp, (u8*)&Header, sizeof(Header)))
         {
                 fclose(fp);
                 return false;
         }
+        if (!validate_header(Header))
+        {
+                fclose(fp);
+                return false;
+        }
+        u64 total = 0;
         for (int i = 0; i < 256; i++)
                 for (int j = 0; j < 256; j++)
                         for (int k = 0; k < 256; k++)
@@ -455,6 +501,7 @@ bool TFastBase::LoadFromFileBase128(char* fn)
                                         return false;
                                 }
                                 list->cnt = cnt_buf[0] | (cnt_buf[1] << 8);
+                                total += list->cnt;
                                 if (list->cnt)
                                 {
                                         u32 grow = list->cnt / 2;
@@ -481,7 +528,7 @@ bool TFastBase::LoadFromFileBase128(char* fn)
                                 }
                         }
         fclose(fp);
-        return true;
+        return total == Header.rec_cnt;
 }
 
 bool TFastBase::OpenMapped(char* fn)
@@ -532,8 +579,14 @@ bool TFastBase::OpenMapped(char* fn)
 #endif
         mapped_mode = true;
         u8* p = mapped_ptr;
-        memcpy(Header, p, sizeof(Header));
+        memcpy(&Header, p, sizeof(Header));
         p += sizeof(Header);
+        if (!validate_header(Header))
+        {
+                CloseMapped();
+                return false;
+        }
+        u64 total = 0;
         for (int i = 0; i < 256; i++)
                 for (int j = 0; j < 256; j++)
                         for (int k = 0; k < 256; k++)
@@ -543,7 +596,13 @@ bool TFastBase::OpenMapped(char* fn)
                                 lists[i][j][k].capacity = 0;
                                 lists[i][j][k].data = (u32*)(p + 2);
                                 p += 2 + cnt * DB_REC_LEN;
+                                total += cnt;
                         }
+        if (total != Header.rec_cnt)
+        {
+                CloseMapped();
+                return false;
+        }
         return true;
 }
 
