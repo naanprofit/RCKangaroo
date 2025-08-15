@@ -383,15 +383,17 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	ram /= (1024 * 1024 * 1024); //GB
 	printf("SOTA method, estimated ops: 2^%.3f, RAM for DPs: %.3f GB. DP and GPU overheads not included!\r\n", log2(ops), ram);
 	gIsOpsLimit = false;
-	double MaxTotalOps = 0.0;
-	if (gMax > 0)
-	{
-		MaxTotalOps = gMax * ops;
-		double ram_max = (32 + 4 + 4) * MaxTotalOps / dp_val; //+4 for grow allocation and memory fragmentation
-		ram_max += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
-		ram_max /= (1024 * 1024 * 1024); //GB
-		printf("Max allowed number of ops: 2^%.3f, max RAM for DPs: %.3f GB\r\n", log2(MaxTotalOps), ram_max);
-	}
+        double MaxTotalOps = 0.0;
+        if (gMax > 0)
+        {
+                MaxTotalOps = gMax * ops;
+                double ram_max = (32 + 4 + 4) * MaxTotalOps / dp_val; //+4 for grow allocation and memory fragmentation
+                ram_max += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
+                ram_max /= (1024 * 1024 * 1024); //GB
+                printf("Max allowed number of ops: 2^%.3f, max RAM for DPs: %.3f GB\r\n", log2(MaxTotalOps), ram_max);
+                if (MaxTotalOps < ops * 0.1)
+                        printf("WARNING: MaxTotalOps is set very low and the search may stop before finding the key\r\n");
+        }
 
         u64 total_kangs = GpuKangs[0]->CalcKangCnt();
         for (int i = 1; i < GpuCnt; i++)
@@ -548,7 +550,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                 if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
                 {
                         gIsOpsLimit = true;
-                        printf("Operations limit reached: %llu/%.0f ops\r\n", PntTotalOps, MaxTotalOps);
+                        printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
                         break;
                 }
 	}
@@ -569,7 +571,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 
         if (gIsOpsLimit)
         {
-                printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
+                printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s. Search aborted before finding the key\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
                 if (gGenMode && gTamesWriter)
                 {
                         TamesRecordWriterClose(gTamesWriter);
@@ -817,12 +819,14 @@ int main(int argc, char* argv[])
 		gStart.GetHexStr(sx);
 		printf("Offset: %s\r\n", sx);
 
-		if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
-		{
-			if (!gIsOpsLimit)
-				printf("FATAL ERROR: SolvePoint failed\r\n");
-			goto label_end;
-		}
+                if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
+                {
+                        if (gIsOpsLimit)
+                                printf("Search stopped: operations cap hit before locating the key\r\n");
+                        else
+                                printf("Key not found\r\n");
+                        goto label_end;
+                }
 		pk_found.AddModP(gStart);
             EcPoint tmp = ec.MultiplyG_GLV(pk_found);
 		if (!tmp.IsEqual(gPubKey))
@@ -868,12 +872,14 @@ int main(int argc, char* argv[])
 			pk.RndBits(gRange);
                     PntToSolve = ec.MultiplyG_GLV(pk);
 
-			if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
-			{
-				if (!gIsOpsLimit)
-					printf("FATAL ERROR: SolvePoint failed\r\n");
-				break;
-			}
+                        if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
+                        {
+                                if (gIsOpsLimit)
+                                        printf("Benchmark stopped: operations cap hit before locating the key\r\n");
+                                else
+                                        printf("Benchmark stopped: key not found\r\n");
+                                break;
+                        }
 			if (!pk_found.IsEqual(pk))
 			{
 				printf("FATAL ERROR: Found key is wrong!\r\n");
@@ -953,15 +959,17 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	ram /= (1024 * 1024 * 1024); //GB
 	printf("SOTA method, estimated ops: 2^%.3f, RAM for DPs: %.3f GB. DP and GPU overheads not included!\r\n", log2(ops), ram);
 	gIsOpsLimit = false;
-	double MaxTotalOps = 0.0;
-	if (gMax > 0)
-	{
-		MaxTotalOps = gMax * ops;
-		double ram_max = (32 + 4 + 4) * MaxTotalOps / dp_val; //+4 for grow allocation and memory fragmentation
-		ram_max += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
-		ram_max /= (1024 * 1024 * 1024); //GB
-		printf("Max allowed number of ops: 2^%.3f, max RAM for DPs: %.3f GB\r\n", log2(MaxTotalOps), ram_max);
-	}
+        double MaxTotalOps = 0.0;
+        if (gMax > 0)
+        {
+                MaxTotalOps = gMax * ops;
+                double ram_max = (32 + 4 + 4) * MaxTotalOps / dp_val; //+4 for grow allocation and memory fragmentation
+                ram_max += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
+                ram_max /= (1024 * 1024 * 1024); //GB
+                printf("Max allowed number of ops: 2^%.3f, max RAM for DPs: %.3f GB\r\n", log2(MaxTotalOps), ram_max);
+                if (MaxTotalOps < ops * 0.1)
+                        printf("WARNING: MaxTotalOps is set very low and the search may stop before finding the key\r\n");
+        }
 
         u64 total_kangs = GpuKangs[0]->CalcKangCnt();
         for (int i = 1; i < GpuCnt; i++)
@@ -1107,7 +1115,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                 if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
                 {
                         gIsOpsLimit = true;
-                        printf("Operations limit reached: %llu/%.0f ops\r\n", PntTotalOps, MaxTotalOps);
+                        printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
                         break;
                 }
 	}
@@ -1128,7 +1136,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 
         if (gIsOpsLimit)
         {
-                printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
+                printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s. Search aborted before finding the key\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
                 if (gGenMode)
                 {
                         printf("saving tames...\r\n");
@@ -1377,12 +1385,14 @@ int main(int argc, char* argv[])
 		gStart.GetHexStr(sx);
 		printf("Offset: %s\r\n", sx);
 
-		if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
-		{
-			if (!gIsOpsLimit)
-				printf("FATAL ERROR: SolvePoint failed\r\n");
-			goto label_end;
-		}
+                if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
+                {
+                        if (gIsOpsLimit)
+                                printf("Search stopped: operations cap hit before locating the key\r\n");
+                        else
+                                printf("Key not found\r\n");
+                        goto label_end;
+                }
 		pk_found.AddModP(gStart);
             EcPoint tmp = ec.MultiplyG_GLV(pk_found);
 		if (!tmp.IsEqual(gPubKey))
@@ -1428,12 +1438,14 @@ int main(int argc, char* argv[])
 			pk.RndBits(gRange);
                     PntToSolve = ec.MultiplyG_GLV(pk);
 
-			if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
-			{
-				if (!gIsOpsLimit)
-					printf("FATAL ERROR: SolvePoint failed\r\n");
-				break;
-			}
+                        if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
+                        {
+                                if (gIsOpsLimit)
+                                        printf("Benchmark stopped: operations cap hit before locating the key\r\n");
+                                else
+                                        printf("Benchmark stopped: key not found\r\n");
+                                break;
+                        }
 			if (!pk_found.IsEqual(pk))
 			{
 				printf("FATAL ERROR: Found key is wrong!\r\n");
