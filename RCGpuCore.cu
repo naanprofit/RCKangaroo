@@ -516,10 +516,10 @@ __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64
 	((int4*)(jmp))[0] = ((int4*)(jmp_d + 4 * (d_cur & JMP_MASK)))[0];
 	jmp[2] = *(jmp_d + 4 * (d_cur & JMP_MASK) + 2);
 
-	if (d_cur & INV_FLAG)
-		Sub192from192(d, jmp)
-	else
-		Add192to192(d, jmp);
+        if (d_cur & INV_FLAG)
+                Sub192from192(d, jmp);
+        else
+                Add192to192(d, jmp);
 
 	//check in table
 	int found_ind = iter + MD_LEN - 4;
