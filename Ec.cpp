@@ -15,6 +15,7 @@ EcInt g_P; //FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFF
 EcPoint g_G; //Generator point
 EcInt g_Lambda; //GLV eigenvalue
 EcInt g_Beta;   //cube root of unity
+EcInt g_Lambda2; //lambda squared mod n
 
 #define P_REV	0x00000001000003D1
 
@@ -116,6 +117,8 @@ void InitEc()
         g_G.y.SetHexStr("483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8"); //G.y
         g_Lambda.SetHexStr("5363AD4CC05C30E0A5261C028812645A122E22EA20816678DF02967C1B23BD72");
         g_Beta.SetHexStr("7AE96A2B657C07106E64479EAC3434E99CF0497512F58995C1396C28719501EE");
+        g_Lambda2 = g_Lambda;
+        g_Lambda2.MulModN(g_Lambda);
 #ifdef DEBUG_MODE
         GTable = (u8*)malloc(16 * 256 * 256 * 64);
 	EcPoint pnt = g_G;
@@ -566,7 +569,7 @@ void EcInt::ShiftLeft(int nbits)
 }
 
 void EcInt::MulModP(EcInt& val)
-{	
+{
 	u64 buff[8], tmp[5], h;
 	//calc 512 bits
 	Mul256_by_64(val.data, data[0], buff);
@@ -586,8 +589,37 @@ void EcInt::MulModP(EcInt& val)
 	c = _addcarry_u64(c, buff[1], h, data + 1);
 	c = _addcarry_u64(c, 0, buff[2], data + 2);
 	data[4] = _addcarry_u64(c, buff[3], 0, data + 3);
-	while (data[4])
-		Sub(g_P);
+        while (data[4])
+                Sub(g_P);
+}
+
+void EcInt::MulModN(const EcInt& val)
+{
+        using boost::multiprecision::cpp_int;
+        static const cpp_int order("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141");
+        cpp_int a = 0, b = 0;
+        for (int i = 3; i >= 0; --i)
+        {
+                a <<= 64; a += data[i];
+                b <<= 64; b += val.data[i];
+        }
+        cpp_int r = (a * b) % order;
+        for (int i = 0; i < 4; ++i)
+        {
+                data[i] = (u64)(r & 0xFFFFFFFFFFFFFFFFULL);
+                r >>= 64;
+        }
+        data[4] = 0;
+}
+
+void EcInt::MulLambdaN()
+{
+        MulModN(g_Lambda);
+}
+
+void EcInt::MulLambda2N()
+{
+        MulModN(g_Lambda2);
 }
 
 void EcInt::Mul_u64(EcInt& val, u64 multiplier)

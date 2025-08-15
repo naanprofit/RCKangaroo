@@ -16,6 +16,9 @@ void CallGpuKernelABC(TKparams Kparams);
 void AddPointsToList(u32* data, int cnt, u64 ops_cnt);
 extern bool gGenMode; //tames generation mode
 
+extern __device__ __constant__ u64 BETA[4];
+extern __device__ __constant__ u64 BETA2[4];
+
 int RCGpuKang::CalcKangCnt()
 {
 	Kparams.BlockCnt = mpCnt;
@@ -227,14 +230,30 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	}
 	free(buf);
 
-	err = cuSetGpuParams(Kparams, jmp2_table);
-	if (err != cudaSuccess)
-	{
-		free(jmp2_table);
-		printf("GPU %d, cuSetGpuParams failed: %s!\r\n", CudaIndex, cudaGetErrorString(err));
-		return false;
-	}
-	free(jmp2_table);
+        err = cuSetGpuParams(Kparams, jmp2_table);
+        if (err != cudaSuccess)
+        {
+                free(jmp2_table);
+                printf("GPU %d, cuSetGpuParams failed: %s!\r\n", CudaIndex, cudaGetErrorString(err));
+                return false;
+        }
+        EcInt beta2 = g_Beta;
+        beta2.MulModP(g_Beta);
+        err = cudaMemcpyToSymbol(BETA, g_Beta.data, 32);
+        if (err != cudaSuccess)
+        {
+                free(jmp2_table);
+                printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                return false;
+        }
+        err = cudaMemcpyToSymbol(BETA2, beta2.data, 32);
+        if (err != cudaSuccess)
+        {
+                free(jmp2_table);
+                printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                return false;
+        }
+        free(jmp2_table);
 //jmp3
 	buf = (u64*)malloc(JMP_CNT * 96);
 	for (int i = 0; i < JMP_CNT; i++)

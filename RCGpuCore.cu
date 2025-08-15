@@ -10,6 +10,10 @@
 //imp2 table points for KernelA
 __device__ __constant__ u64 jmp2_table[8 * JMP_CNT];
 
+// endomorphism constants
+__device__ __constant__ u64 BETA[4];
+__device__ __constant__ u64 BETA2[4];
+
 
 #define BLOCK_CNT	gridDim.x
 #define BLOCK_X		blockIdx.x
@@ -490,6 +494,32 @@ __global__ void KernelA(const TKparams Kparams)
 
 #endif
 
+__device__ __forceinline__ bool is_less_u256(const u64* a, const u64* b)
+{
+    if (a[3] != b[3]) return a[3] < b[3];
+    if (a[2] != b[2]) return a[2] < b[2];
+    if (a[1] != b[1]) return a[1] < b[1];
+    return a[0] < b[0];
+}
+
+__device__ __forceinline__ u32 pick_phi_k_and_xcan(u64* xin, u64* x_can)
+{
+    __align__(16) u64 x[4];
+    x[0] = xin[0];
+    x[1] = xin[1];
+    x[2] = 0;
+    x[3] = 0;
+
+    __align__(16) u64 xb1[4], xb2[4];
+    MulModP(xb1, x, BETA);
+    MulModP(xb2, x, BETA2);
+
+    u32 k = 0;
+    Copy_u64_x4(x_can, x);
+    if (is_less_u256(xb1, x_can)) { k = 1; Copy_u64_x4(x_can, xb1); }
+    if (is_less_u256(xb2, x_can)) { k = 2; Copy_u64_x4(x_can, xb2); }
+    return k;
+}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u64* d)
@@ -498,14 +528,16 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
 	ind >>= 16;
 	if (ind >= DPTABLE_MAX_CNT)
 		return;
-	int4 rx = *(int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-	u32 pos = atomicAdd(Kparams.DPs_out, 1);
-	pos = min(pos, MAX_DP_CNT - 1);
-	u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
-	*(int4*)&DPs[0] = rx;
-	*(int4*)&DPs[4] = ((int4*)d)[0];
-	*(u64*)&DPs[8] = d[2];
-	DPs[10] = 3 * kang_ind / Kparams.KangCnt; //kang type
+        int4 rx = *(int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
+        __align__(16) u64 x_can[4];
+        u32 k = pick_phi_k_and_xcan((u64*)&rx, x_can);
+        u32 pos = atomicAdd(Kparams.DPs_out, 1);
+        pos = min(pos, MAX_DP_CNT - 1);
+        u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
+        *(int4*)&DPs[0] = ((int4*)x_can)[0];
+        *(int4*)&DPs[4] = ((int4*)d)[0];
+        *(u64*)&DPs[8] = d[2];
+        DPs[10] = (k << 2) | (3 * kang_ind / Kparams.KangCnt); //kang type + phi k
 }
 
 __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64* d, u32 kang_ind, u64* jmp1_d, u64* jmp2_d, const TKparams& Kparams, u64* table, u32* cur_ind, u8 iter)
