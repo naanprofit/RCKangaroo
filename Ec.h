@@ -40,10 +40,14 @@ public:
 	void NegModP();
 	void MulModP(EcInt& val);
 	void InvModP();
-	void SqrtModP();
+        void SqrtModP();
 
-	void RndBits(int nbits);
-	void RndMax(EcInt& max);
+        void RndBits(int nbits);
+        void RndMax(EcInt& max);
+
+        void MulModN(const EcInt& val);
+        void MulLambdaN();
+        void MulLambda2N();
 
 	u64 data[4 + 1];
 };
@@ -76,6 +80,7 @@ public:
 // Endomorphism constants for secp256k1
 extern EcInt g_Lambda; // eigenvalue for scalar decomposition
 extern EcInt g_Beta;   // cube root of unity for x-coordinate mapping
+extern EcInt g_Lambda2; // lambda squared mod n
 
 void InitEc();
 void DeInitEc();
