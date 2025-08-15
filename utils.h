@@ -137,4 +137,10 @@ public:
         bool IsMapped();
 };
 
+// Streaming writer for tames records
+struct TamesRecordWriter;
+TamesRecordWriter* TamesRecordWriterOpen(const char* path, bool base128, size_t rec_size, u64 prealloc_recs = 0);
+bool TamesRecordWriterWrite(TamesRecordWriter* wr, const u8* data);
+void TamesRecordWriterClose(TamesRecordWriter* wr);
+
 bool IsFileExist(char* fn);

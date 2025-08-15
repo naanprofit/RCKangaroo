@@ -68,6 +68,7 @@ int gBloomMBits = 24;
 int gBloomK = 3;
 int gPhiFold = 1;
 BloomFilter gBloom;
+TamesRecordWriter* gTamesWriter = NULL;
 
 #pragma pack(push, 1)
 struct DBRec
@@ -259,8 +260,8 @@ void CheckNewPoints()
 
                 if (gGenMode)
                 {
-                        if (!db.IsMapped())
-                                db.AddDataBlock((u8*)&nrec);
+                        if (gTamesWriter)
+                                TamesRecordWriterWrite(gTamesWriter, (u8*)&nrec);
                         continue;
                 }
 
@@ -438,7 +439,17 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                 }
         }
 
-	SetRndSeed(0); //use same seed to make tames from file compatible
+        if (gGenMode && gTamesFileName[0])
+        {
+                gTamesWriter = TamesRecordWriterOpen(gTamesFileName, gTamesBase128, sizeof(DBRec));
+                if (!gTamesWriter)
+                {
+                        printf("tames writer open failed\r\n");
+                        return false;
+                }
+        }
+
+        SetRndSeed(0); //use same seed to make tames from file compatible
 	PntTotalOps = 0;
 	PntIndex = 0;
 //prepare jumps
@@ -556,27 +567,24 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
         if (gIsOpsLimit)
         {
                 printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
-                if (gGenMode)
+                if (gGenMode && gTamesWriter)
                 {
-                        printf("saving tames...\r\n");
-                        db.Header.flags = (u16)(TAMES_FLAG_LE | (gRange << TAMES_RANGE_SHIFT));
-                        bool ok;
-                        if (gTamesBase128)
-                                ok = db.SaveToFileBase128(gTamesFileName);
-                        else
-                                ok = db.SaveToFile(gTamesFileName);
-                        if (ok)
-                                printf("tames saved\r\n");
-                        else
-                                printf("tames saving failed\r\n");
+                        TamesRecordWriterClose(gTamesWriter);
+                        gTamesWriter = NULL;
+                        printf("tames saved\r\n");
                 }
                 db.Clear();
                 return false;
         }
 
-	double K = (double)PntTotalOps / pow(2.0, Range / 2.0);
-	printf("Point solved, K: %.3f (with DP and GPU overheads)\r\n\r\n", K);
-	db.Clear();
+        double K = (double)PntTotalOps / pow(2.0, Range / 2.0);
+        printf("Point solved, K: %.3f (with DP and GPU overheads)\r\n\r\n", K);
+        if (gGenMode && gTamesWriter)
+        {
+                TamesRecordWriterClose(gTamesWriter);
+                gTamesWriter = NULL;
+        }
+        db.Clear();
         *pk_res = gPrivKey;
         return true;
 }

@@ -431,6 +431,118 @@ static bool read_base128(FILE* fp, u8* data, size_t len)
         return true;
 }
 
+struct TamesRecordWriter
+{
+        bool base128;
+        size_t rec_size;
+        u64 offset;
+        FILE* fp;
+        u8* mapped_ptr;
+        size_t mapped_size;
+#ifndef _WIN32
+        int fd;
+#endif
+};
+
+TamesRecordWriter* TamesRecordWriterOpen(const char* path, bool base128, size_t rec_size, u64 prealloc_recs)
+{
+        TamesRecordWriter* w = new TamesRecordWriter();
+        w->base128 = base128;
+        w->rec_size = rec_size;
+        w->offset = 0;
+        w->fp = NULL;
+        w->mapped_ptr = NULL;
+        w->mapped_size = 0;
+#ifndef _WIN32
+        w->fd = -1;
+#endif
+        if (base128 || prealloc_recs == 0)
+        {
+                w->fp = fopen(path, "wb");
+                if (!w->fp)
+                {
+                        delete w;
+                        return NULL;
+                }
+                return w;
+        }
+#ifndef _WIN32
+        w->fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);
+        if (w->fd < 0)
+        {
+                delete w;
+                return NULL;
+        }
+        w->mapped_size = prealloc_recs * rec_size;
+        if (ftruncate(w->fd, w->mapped_size) < 0)
+        {
+                close(w->fd);
+                delete w;
+                return NULL;
+        }
+        w->mapped_ptr = (u8*)mmap(NULL, w->mapped_size, PROT_READ | PROT_WRITE, MAP_SHARED, w->fd, 0);
+        if (w->mapped_ptr == MAP_FAILED)
+        {
+                close(w->fd);
+                delete w;
+                return NULL;
+        }
+        return w;
+#else
+        w->fp = fopen(path, "wb");
+        if (!w->fp)
+        {
+                delete w;
+                return NULL;
+        }
+        return w;
+#endif
+}
+
+bool TamesRecordWriterWrite(TamesRecordWriter* w, const u8* data)
+{
+        if (!w)
+                return false;
+        if (w->base128)
+        {
+                return write_base128(w->fp, data, w->rec_size);
+        }
+        if (w->mapped_ptr)
+        {
+                if (w->offset + w->rec_size > w->mapped_size)
+                        return false;
+                memcpy(w->mapped_ptr + w->offset, data, w->rec_size);
+                w->offset += w->rec_size;
+                return true;
+        }
+        return fwrite(data, 1, w->rec_size, w->fp) == w->rec_size;
+}
+
+void TamesRecordWriterClose(TamesRecordWriter* w)
+{
+        if (!w)
+                return;
+        if (!w->base128 && w->mapped_ptr)
+        {
+#ifndef _WIN32
+                msync(w->mapped_ptr, w->offset, MS_SYNC);
+                munmap(w->mapped_ptr, w->mapped_size);
+                if (w->fd >= 0)
+                {
+                        if (w->offset < w->mapped_size)
+                        {
+                                int res = ftruncate(w->fd, w->offset);
+                                (void)res;
+                        }
+                        close(w->fd);
+                }
+#endif
+        }
+        else if (w->fp)
+                fclose(w->fp);
+        delete w;
+}
+
 bool TFastBase::SaveToFileBase128(char* fn)
 {
         FILE* fp = fopen(fn, "wb");
