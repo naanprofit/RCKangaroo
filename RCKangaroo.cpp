@@ -407,44 +407,64 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
        {
                printf("load tames...\r\n");
                bool ok = false;
-               if (gTamesBase128)
+               bool fileBase128 = false;
+
+               FILE* tfp = fopen(gTamesFileName, "rb");
+               if (tfp)
                {
-                       ok = db.LoadFromFileBase128(gTamesFileName);
-                       if (ok)
-                               printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+                       u8 magic[4];
+                       if (fread(magic, 1, 4, tfp) == 4)
+                               fileBase128 = memcmp(magic, TAMES_MAGIC, 4) != 0;
                        else
-                               printf("Base128 tames loading failed\r\n");
+                               printf("tames header read failed\r\n");
+                       fclose(tfp);
                }
+
+               if (fileBase128 != gTamesBase128)
+                       printf("tames format mismatch\r\n");
                else
                {
-                       ok = db.OpenMapped(gTamesFileName);
-                       if (!ok)
+                       if (fileBase128)
                        {
-                               printf("memory-mapped tames failed, loading into RAM...\r\n");
-                               ok = db.LoadFromFile(gTamesFileName);
-                               if (!ok)
-                                       printf("binary tames loading failed\r\n");
-                       }
-               }
-               if (ok)
-               {
-                       bool fileBase128 = (db.Header.flags & TAMES_FLAG_BASE128) != 0;
-                       if (fileBase128 != gTamesBase128)
-                       {
-                               printf("tames format mismatch\r\n");
-                               db.Clear();
-                               ok = false;
-                       }
-                       else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
-                       {
-                               printf("loaded tames have different range, they cannot be used, clear\r\n");
-                               db.Clear();
-                               tamesRangeMismatch = true;
-                               printf("WARNING: tames cleared due to range mismatch, continuing without precomputed tames\r\n");
+                               ok = db.LoadFromFileBase128(gTamesFileName);
+                               if (ok)
+                                       printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+                               else
+                                       printf("Base128 tames loading failed\r\n");
                        }
                        else
-                               printf("tames loaded\r\n");
+                       {
+                               ok = db.OpenMapped(gTamesFileName);
+                               if (!ok)
+                               {
+                                       printf("memory-mapped tames failed, loading into RAM...\r\n");
+                                       ok = db.LoadFromFile(gTamesFileName);
+                                       if (!ok)
+                                               printf("binary tames loading failed\r\n");
+                               }
+                       }
+
+                       if (ok)
+                       {
+                               bool hdrBase128 = (db.Header.flags & TAMES_FLAG_BASE128) != 0;
+                               if (hdrBase128 != fileBase128)
+                               {
+                                       printf("tames format mismatch\r\n");
+                                       db.Clear();
+                                       ok = false;
+                               }
+                               else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
+                               {
+                                       printf("loaded tames have different range, they cannot be used, clear\r\n");
+                                       db.Clear();
+                                       tamesRangeMismatch = true;
+                                       printf("WARNING: tames cleared due to range mismatch, continuing without precomputed tames\r\n");
+                               }
+                               else
+                                       printf("tames loaded\r\n");
+                       }
                }
+
                if (!ok)
                {
                        printf("tames loading failed\r\n");
@@ -991,44 +1011,64 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
        {
                printf("load tames...\r\n");
                bool ok = false;
-               if (gTamesBase128)
+               bool fileBase128 = false;
+
+               FILE* tfp = fopen(gTamesFileName, "rb");
+               if (tfp)
                {
-                       ok = db.LoadFromFileBase128(gTamesFileName);
-                       if (ok)
-                               printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+                       u8 magic[4];
+                       if (fread(magic, 1, 4, tfp) == 4)
+                               fileBase128 = memcmp(magic, TAMES_MAGIC, 4) != 0;
                        else
-                               printf("Base128 tames loading failed\r\n");
+                               printf("tames header read failed\r\n");
+                       fclose(tfp);
                }
+
+               if (fileBase128 != gTamesBase128)
+                       printf("tames format mismatch\r\n");
                else
                {
-                       ok = db.OpenMapped(gTamesFileName);
-                       if (!ok)
+                       if (fileBase128)
                        {
-                               printf("memory-mapped tames failed, loading into RAM...\r\n");
-                               ok = db.LoadFromFile(gTamesFileName);
-                               if (!ok)
-                                       printf("binary tames loading failed\r\n");
-                       }
-               }
-               if (ok)
-               {
-                       bool fileBase128 = (db.Header.flags & TAMES_FLAG_BASE128) != 0;
-                       if (fileBase128 != gTamesBase128)
-                       {
-                               printf("tames format mismatch\r\n");
-                               db.Clear();
-                               ok = false;
-                       }
-                       else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
-                       {
-                               printf("loaded tames have different range, they cannot be used, clear\r\n");
-                               db.Clear();
-                               tamesRangeMismatch = true;
-                               printf("WARNING: tames cleared due to range mismatch, continuing without precomputed tames\r\n");
+                               ok = db.LoadFromFileBase128(gTamesFileName);
+                               if (ok)
+                                       printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+                               else
+                                       printf("Base128 tames loading failed\r\n");
                        }
                        else
-                               printf("tames loaded\r\n");
+                       {
+                               ok = db.OpenMapped(gTamesFileName);
+                               if (!ok)
+                               {
+                                       printf("memory-mapped tames failed, loading into RAM...\r\n");
+                                       ok = db.LoadFromFile(gTamesFileName);
+                                       if (!ok)
+                                               printf("binary tames loading failed\r\n");
+                               }
+                       }
+
+                       if (ok)
+                       {
+                               bool hdrBase128 = (db.Header.flags & TAMES_FLAG_BASE128) != 0;
+                               if (hdrBase128 != fileBase128)
+                               {
+                                       printf("tames format mismatch\r\n");
+                                       db.Clear();
+                                       ok = false;
+                               }
+                               else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
+                               {
+                                       printf("loaded tames have different range, they cannot be used, clear\r\n");
+                                       db.Clear();
+                                       tamesRangeMismatch = true;
+                                       printf("WARNING: tames cleared due to range mismatch, continuing without precomputed tames\r\n");
+                               }
+                               else
+                                       printf("tames loaded\r\n");
+                       }
                }
+
                if (!ok)
                {
                        printf("tames loading failed\r\n");

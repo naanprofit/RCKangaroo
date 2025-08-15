@@ -32,7 +32,7 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-max</b>		option to limit max number of operations. For example, value 5.5 limits number of operations to 5.5 * 1.15 * sqrt(range), software stops when the limit is reached. 
 
-<b>-tames</b>           filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. Existing tames are assumed to be in the default binary format and are memory-mapped for speed. Use <code>-base128</code> to read or write legacy Base128 files. The program validates the format via a header flag and aborts on mismatch.
+<b>-tames</b>           filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. The loader inspects the file header to auto-detect whether the tames are in binary or Base128 format. Binary files are memory-mapped for speed, while Base128 files must be fully decoded. Use <code>-base128</code> to read or write legacy Base128 files. A mismatch between the detected format and the <code>-base128</code> flag aborts the load.
 
 <b>-base128</b>        when generating or loading tames, use the legacy Base128 format instead of the default binary format.
 
@@ -71,8 +71,7 @@ RCKangaroo.exe -dp 16 -range 76 -tames t76.dat -max 10 --phi-fold 2
 RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a4fd8c810b7e42a4b398882b381bcd85e40c6883712912d167c83e73a --multi-dp 1 --bloom-mbits 27 --bloom-k 4
   enable multiple DP tables and tune the Bloom filter parameters.
 
-Binary tames load much faster because the OS can memory-map them directly. Base128 files are smaller but cannot be memory-mapped and must be fully decoded into RAM at
-startup. Files are tagged with a header flag and a mismatched format causes the load to fail. Switch between the formats by regenerating the file with or without the <code>-base128</code> flag.
+Binary tames load much faster because the OS can memory-map them directly. Base128 files are smaller but cannot be memory-mapped and must be fully decoded into RAM at startup. The loader inspects the header to determine the format and fails if it does not match the <code>-base128</code> option. Switch between the formats by regenerating the file with or without the <code>-base128</code> flag.
 
 <b>Binary tames header format:</b>
 
