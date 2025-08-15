@@ -61,6 +61,7 @@ char gTamesFileName[1024];
 double gMax;
 bool gGenMode; //tames generation mode
 bool gIsOpsLimit;
+const char* gOpsLimitReason = "";
 bool gTamesBase128; // legacy Base128 tames format
 bool gMultiDP = true;
 int gDpCoarseOffset = 0;
@@ -422,7 +423,8 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	ram += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
 	ram /= (1024 * 1024 * 1024); //GB
 	printf("SOTA method, estimated ops: 2^%.3f, RAM for DPs: %.3f GB. DP and GPU overheads not included!\r\n", log2(ops), ram);
-	gIsOpsLimit = false;
+        gIsOpsLimit = false;
+        gOpsLimitReason = "";
         double MaxTotalOps = 0.0;
         if (gMax > 0)
         {
@@ -443,6 +445,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
         printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
 
        bool tamesRangeMismatch = false;
+       bool tamesHeaderMismatch = false;
        if (!gGenMode && gTamesFileName[0])
        {
                printf("load tames...\r\n");
@@ -460,9 +463,13 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                        fclose(tfp);
                }
 
-               if (fileBase128 != gTamesBase128)
-                       printf("tames format mismatch\r\n");
-               else
+       if (fileBase128 != gTamesBase128)
+       {
+               printf("tames format mismatch\r\n");
+               printf("WARNING: tames skipped due to header mismatch, continuing without precomputed tames\r\n");
+               tamesHeaderMismatch = true;
+       }
+       else
                {
                        if (fileBase128)
                        {
@@ -492,6 +499,8 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                                        printf("tames format mismatch\r\n");
                                        db.Clear();
                                        ok = false;
+                                       printf("WARNING: tames skipped due to header mismatch, continuing without precomputed tames\r\n");
+                                       tamesHeaderMismatch = true;
                                }
                                else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
                                {
@@ -508,7 +517,8 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                if (!ok)
                {
                        printf("tames loading failed\r\n");
-                       printf("WARNING: tames loading failed, continuing without precomputed tames\r\n");
+                       if (!tamesHeaderMismatch && !tamesRangeMismatch)
+                               printf("WARNING: tames loading failed, continuing without precomputed tames\r\n");
                }
        }
 
@@ -616,7 +626,8 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                 if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
                 {
                         gIsOpsLimit = true;
-                        printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
+                        gOpsLimitReason = (tamesHeaderMismatch || tamesRangeMismatch) ? "ops cap reached; tames not loaded" : "ops cap reached";
+                        printf("Operations limit reached: %llu/%.0f ops. Reason: %s\r\n", PntTotalOps, MaxTotalOps, gOpsLimitReason);
                         break;
                 }
 	}
@@ -637,7 +648,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 
         if (gIsOpsLimit)
         {
-                printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s. Search aborted before finding the key\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
+                printf("Operations limit reached: %llu/%.0f ops. Reason: %s. Search aborted before finding the key\r\n", PntTotalOps, MaxTotalOps, gOpsLimitReason);
                 if (gGenMode)
                 {
                         printf("saving tames...\r\n");
@@ -842,6 +853,7 @@ int main(int argc, char* argv[])
         gMax = 0.0;
         gGenMode = false;
         gIsOpsLimit = false;
+        gOpsLimitReason = "";
         gPhiFold = 1;
         memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
         if (!ParseCommandLine(argc, argv))
@@ -889,7 +901,7 @@ int main(int argc, char* argv[])
                 if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
                 {
                         if (gIsOpsLimit)
-                                printf("Search stopped: operations cap hit before locating the key\r\n");
+                                printf("Search stopped after %llu operations (%s)\r\n", PntTotalOps, gOpsLimitReason);
                         else
                                 printf("Key not found\r\n");
                         goto label_end;
@@ -942,7 +954,7 @@ int main(int argc, char* argv[])
                         if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
                         {
                                 if (gIsOpsLimit)
-                                        printf("Benchmark stopped: operations cap hit before locating the key\r\n");
+                                        printf("Benchmark stopped after %llu operations (%s)\r\n", PntTotalOps, gOpsLimitReason);
                                 else
                                         printf("Benchmark stopped: key not found\r\n");
                                 break;
