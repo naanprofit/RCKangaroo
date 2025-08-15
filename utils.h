@@ -70,6 +70,23 @@ struct TListRec
 };
 #pragma pack(pop)
 
+// tames file header
+#define TAMES_MAGIC "PMAP"
+#define TAMES_VERSION 1
+#define TAMES_FLAG_LE 0x0001
+#define TAMES_RANGE_SHIFT 8
+
+#pragma pack(push, 1)
+struct TamesHeader
+{
+        char magic[4];
+        u8   version;
+        u8   stride;
+        u16  flags;
+        u64  rec_cnt;
+};
+#pragma pack(pop)
+
 class MemPool
 {
 private:
@@ -101,7 +118,7 @@ private:
         size_t mapped_size;
         bool mapped_mode;
 public:
-        u8 Header[256];
+        TamesHeader Header;
 
         TFastBase();
         ~TFastBase();
@@ -112,8 +129,8 @@ public:
         u64 GetBlockCnt();
         bool LoadFromFile(char* fn);
         bool SaveToFile(char* fn);
-        bool LoadFromFileBase128(char* fn);
-        bool SaveToFileBase128(char* fn);
+        bool LoadFromFileBase128(char* fn); // legacy Base128 support, prefer binary pmap
+        bool SaveToFileBase128(char* fn);   // legacy Base128 support, prefer binary pmap
         bool OpenMapped(char* fn);
         void CloseMapped();
         u8* FindDataBlockMapped(u8* data);
