@@ -414,7 +414,10 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                                 printf("binary tames loading failed, trying legacy Base128...\r\n");
                                 ok = db.LoadFromFileBase128(gTamesFileName);
                                 if (ok)
+                                {
                                         gTamesBase128 = true;
+                                        printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+                                }
                         }
                         else
                                 gTamesBase128 = false;
@@ -978,7 +981,10 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                                 printf("binary tames loading failed, trying legacy Base128...\r\n");
                                 ok = db.LoadFromFileBase128(gTamesFileName);
                                 if (ok)
+                                {
                                         gTamesBase128 = true;
+                                        printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+                                }
                         }
                         else
                                 gTamesBase128 = false;
