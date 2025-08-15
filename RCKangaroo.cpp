@@ -424,13 +424,14 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		printf("Max allowed number of ops: 2^%.3f, max RAM for DPs: %.3f GB\r\n", log2(MaxTotalOps), ram_max);
 	}
 
-	u64 total_kangs = GpuKangs[0]->CalcKangCnt();
-	for (int i = 1; i < GpuCnt; i++)
-		total_kangs += GpuKangs[i]->CalcKangCnt();
-	double path_single_kang = ops / total_kangs;	
-	double DPs_per_kang = path_single_kang / dp_val;
-	printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
+        u64 total_kangs = GpuKangs[0]->CalcKangCnt();
+        for (int i = 1; i < GpuCnt; i++)
+                total_kangs += GpuKangs[i]->CalcKangCnt();
+        double path_single_kang = ops / total_kangs;
+        double DPs_per_kang = path_single_kang / dp_val;
+        printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
 
+        bool tamesRangeMismatch = false;
         if (!gGenMode && gTamesFileName[0])
         {
                 printf("load tames...\r\n");
@@ -458,10 +459,15 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                         {
                                 printf("loaded tames have different range, they cannot be used, clear\r\n");
                                 db.Clear();
+                                tamesRangeMismatch = true;
+                                printf("WARNING: tames cleared due to range mismatch, continuing without precomputed tames\r\n");
                         }
                 }
                 else
+                {
                         printf("tames loading failed\r\n");
+                        printf("WARNING: tames loading failed, continuing without precomputed tames\r\n");
+                }
         }
 
 	SetRndSeed(0); //use same seed to make tames from file compatible
@@ -557,12 +563,12 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 			tm_stats = GetTickCount64();
 		}
 
-		if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
-		{
-			gIsOpsLimit = true;
-			printf("Operations limit reached\r\n");
-			break;
-		}
+                if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
+                {
+                        gIsOpsLimit = true;
+                        printf("Operations limit reached: %llu/%.0f ops\r\n", PntTotalOps, MaxTotalOps);
+                        break;
+                }
 	}
 
 	printf("Stopping work ...\r\n");
@@ -579,10 +585,11 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 #endif
 	}
 
-	if (gIsOpsLimit)
-	{
-		if (gGenMode)
-		{
+        if (gIsOpsLimit)
+        {
+                printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
+                if (gGenMode)
+                {
                         printf("saving tames...\r\n");
                         db.Header.flags = (u16)(TAMES_FLAG_LE | (gRange << TAMES_RANGE_SHIFT));
                         bool ok;
@@ -595,9 +602,9 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                         else
                                 printf("tames saving failed\r\n");
                 }
-		db.Clear();
-		return false;
-	}
+                db.Clear();
+                return false;
+        }
 
 	double K = (double)PntTotalOps / pow(2.0, Range / 2.0);
 	printf("Point solved, K: %.3f (with DP and GPU overheads)\r\n\r\n", K);
@@ -968,13 +975,14 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 		printf("Max allowed number of ops: 2^%.3f, max RAM for DPs: %.3f GB\r\n", log2(MaxTotalOps), ram_max);
 	}
 
-	u64 total_kangs = GpuKangs[0]->CalcKangCnt();
-	for (int i = 1; i < GpuCnt; i++)
-		total_kangs += GpuKangs[i]->CalcKangCnt();
-	double path_single_kang = ops / total_kangs;	
-	double DPs_per_kang = path_single_kang / dp_val;
-	printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
+        u64 total_kangs = GpuKangs[0]->CalcKangCnt();
+        for (int i = 1; i < GpuCnt; i++)
+                total_kangs += GpuKangs[i]->CalcKangCnt();
+        double path_single_kang = ops / total_kangs;
+        double DPs_per_kang = path_single_kang / dp_val;
+        printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
 
+        bool tamesRangeMismatch = false;
         if (!gGenMode && gTamesFileName[0])
         {
                 printf("load tames...\r\n");
@@ -1002,10 +1010,15 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                         {
                                 printf("loaded tames have different range, they cannot be used, clear\r\n");
                                 db.Clear();
+                                tamesRangeMismatch = true;
+                                printf("WARNING: tames cleared due to range mismatch, continuing without precomputed tames\r\n");
                         }
                 }
                 else
+                {
                         printf("tames loading failed\r\n");
+                        printf("WARNING: tames loading failed, continuing without precomputed tames\r\n");
+                }
         }
 
 	SetRndSeed(0); //use same seed to make tames from file compatible
@@ -1100,12 +1113,12 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 			tm_stats = GetTickCount64();
 		}
 
-		if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
-		{
-			gIsOpsLimit = true;
-			printf("Operations limit reached\r\n");
-			break;
-		}
+                if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
+                {
+                        gIsOpsLimit = true;
+                        printf("Operations limit reached: %llu/%.0f ops\r\n", PntTotalOps, MaxTotalOps);
+                        break;
+                }
 	}
 
 	printf("Stopping work ...\r\n");
@@ -1122,10 +1135,11 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 #endif
 	}
 
-	if (gIsOpsLimit)
-	{
-		if (gGenMode)
-		{
+        if (gIsOpsLimit)
+        {
+                printf("Operations limit reached: %llu/%.0f ops. Tames range mismatch: %s\r\n", PntTotalOps, MaxTotalOps, tamesRangeMismatch ? "yes" : "no");
+                if (gGenMode)
+                {
                         printf("saving tames...\r\n");
                         db.Header.flags = (u16)(TAMES_FLAG_LE | (gRange << TAMES_RANGE_SHIFT));
                         bool ok;
@@ -1138,9 +1152,9 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                         else
                                 printf("tames saving failed\r\n");
                 }
-		db.Clear();
-		return false;
-	}
+                db.Clear();
+                return false;
+        }
 
 	double K = (double)PntTotalOps / pow(2.0, Range / 2.0);
 	printf("Point solved, K: %.3f (with DP and GPU overheads)\r\n\r\n", K);
