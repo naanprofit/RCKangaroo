@@ -15,6 +15,8 @@ void CallGpuKernelGen(TKparams Kparams);
 void CallGpuKernelABC(TKparams Kparams);
 void AddPointsToList(u32* data, int cnt, u64 ops_cnt);
 extern bool gGenMode; //tames generation mode
+extern bool gMultiDP;
+extern int gDpCoarseOffset;
 
 extern __device__ __constant__ u64 BETA[4];
 extern __device__ __constant__ u64 BETA2[4];
@@ -52,9 +54,11 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	Kparams.BlockSize = IsOldGpu ? 512 : 256;
 	Kparams.GroupCnt = IsOldGpu ? 64 : 24;
 	KangCnt = Kparams.BlockSize * Kparams.GroupCnt * Kparams.BlockCnt;
-	Kparams.KangCnt = KangCnt;
-	Kparams.DP = DP;
-	Kparams.KernelA_LDS_Size = 64 * JMP_CNT + 16 * Kparams.BlockSize;
+        Kparams.KangCnt = KangCnt;
+        Kparams.DP = DP;
+        if (gMultiDP)
+                printf("GPU %d using coarse DP %d (offset %d)\n", CudaIndex, DP, gDpCoarseOffset);
+        Kparams.KernelA_LDS_Size = 64 * JMP_CNT + 16 * Kparams.BlockSize;
 	Kparams.KernelB_LDS_Size = 64 * JMP_CNT;
 	Kparams.KernelC_LDS_Size = 96 * JMP_CNT;
 	Kparams.IsGenMode = gGenMode;

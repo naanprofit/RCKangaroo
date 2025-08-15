@@ -19,6 +19,7 @@
 #include "defs.h"
 #include "utils.h"
 #include "GpuKang.h"
+#include "Bloom.h"
 
 
 EcJMP EcJumps1[JMP_CNT];
@@ -61,6 +62,11 @@ double gMax;
 bool gGenMode; //tames generation mode
 bool gIsOpsLimit;
 bool gTamesBase128;
+bool gMultiDP = true;
+int gDpCoarseOffset = 0;
+int gBloomMBits = 24;
+int gBloomK = 3;
+BloomFilter gBloom;
 
 #pragma pack(push, 1)
 struct DBRec
@@ -226,10 +232,23 @@ void CheckNewPoints()
 	PntIndex = 0;
 	csAddPoints.Leave();
 
-	for (int i = 0; i < cnt; i++)
-	{
-		DBRec nrec;
-		u8* p = pPntList2 + i * GPU_DP_SIZE;
+        for (int i = 0; i < cnt; i++)
+        {
+                u8* p = pPntList2 + i * GPU_DP_SIZE;
+
+                bool bloom_hit = false;
+                if (gMultiDP)
+                {
+                        u64 x_key = *(u64*)p;
+                        u64 coarse = x_key >> gDpCoarseOffset;
+                        bloom_hit = gBloom.Test(coarse);
+                        gBloom.Add(coarse);
+                        u64 fine_mask = gDpCoarseOffset ? ((1ull << gDpCoarseOffset) - 1) : 0;
+                        if ((x_key & fine_mask) != 0)
+                                continue;
+                }
+
+                DBRec nrec;
                 memcpy(nrec.x, p, 12);
                 memcpy(nrec.d, p + 16, 22);
                 u8 type_byte = gGenMode ? TAME : p[40];
@@ -237,74 +256,104 @@ void CheckNewPoints()
                 u8 nrec_type = type_byte & 3;
                 nrec.type = type_byte;
 
-                DBRec* pref;
-                if (db.IsMapped())
-                        pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                if (gGenMode)
+                {
+                        if (!db.IsMapped())
+                                db.AddDataBlock((u8*)&nrec);
+                        continue;
+                }
+
+                DBRec* pref = NULL;
+                if (!gMultiDP)
+                {
+                        if (db.IsMapped())
+                                pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                        else
+                                pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
+                        if (!pref)
+                                continue;
+                }
                 else
-                        pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
-		if (gGenMode)
-			continue;
-		if (pref)
-		{
-			//in db we dont store first 3 bytes so restore them
-			DBRec tmp_pref;
-			memcpy(&tmp_pref, &nrec, 3);
-			memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
-			pref = &tmp_pref;
-			u8 pref_k = pref->type >> 2;
-			u8 pref_type = pref->type & 3;
-
-			if ((pref_type == nrec_type) && (pref_k == nrec_k))
-			{
-				if (pref_type == TAME)
-					continue;
-
-				if (*(u64*)pref->d == *(u64*)nrec.d)
-					continue;
-			}
-
-			EcInt w, t;
-			int TameType, WildType;
-			if (pref_type != TAME)
-			{
-				memcpy(w.data, pref->d, sizeof(pref->d));
-				if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-				memcpy(t.data, nrec.d, sizeof(nrec.d));
-				if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-				TameType = nrec_type;
-				WildType = pref_type;
-			}
-			else
-			{
-				memcpy(w.data, nrec.d, sizeof(nrec.d));
-				if (nrec.d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-				memcpy(t.data, pref->d, sizeof(pref->d));
-				if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-				TameType = TAME;
-				WildType = nrec_type;
-			}
-
-			if (pref_k == 1) w.MulLambdaN();
-			else if (pref_k == 2) w.MulLambda2N();
-			if (nrec_k == 1) t.MulLambdaN();
-			else if (nrec_k == 2) t.MulLambda2N();
-
-                        bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
-                        if (!res)
+                {
+                        if (bloom_hit)
                         {
-                                bool w12 = ((pref_type == WILD1) && (nrec_type == WILD2)) || ((pref_type == WILD2) && (nrec_type == WILD1));
-                                if (w12) //in rare cases WILD and WILD2 can collide in mirror, in this case there is no way to find K
-                                        ;// ToLog("W1 and W2 collides in mirror");
+                                if (db.IsMapped())
+                                        pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
                                 else
                                 {
-                                        printf("Collision Error\r\n");
-                                        gTotalErrors++;
+                                        pref = (DBRec*)db.FindDataBlock((u8*)&nrec);
+                                        if (!pref)
+                                        {
+                                                db.AddDataBlock((u8*)&nrec);
+                                                continue;
+                                        }
                                 }
+                        }
+                        else
+                        {
+                                if (!db.IsMapped())
+                                        db.AddDataBlock((u8*)&nrec);
                                 continue;
                         }
-                        gSolved = true;
-                        break;
                 }
+
+                DBRec tmp_pref;
+                memcpy(&tmp_pref, &nrec, 3);
+                memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
+                pref = &tmp_pref;
+                u8 pref_k = pref->type >> 2;
+                u8 pref_type = pref->type & 3;
+
+                if ((pref_type == nrec_type) && (pref_k == nrec_k))
+                {
+                        if (pref_type == TAME)
+                                continue;
+
+                        if (*(u64*)pref->d == *(u64*)nrec.d)
+                                continue;
+                }
+
+                EcInt w, t;
+                int TameType, WildType;
+                if (pref_type != TAME)
+                {
+                        memcpy(w.data, pref->d, sizeof(pref->d));
+                        if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+                        memcpy(t.data, nrec.d, sizeof(nrec.d));
+                        if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+                        TameType = nrec_type;
+                        WildType = pref_type;
+                }
+                else
+                {
+                        memcpy(w.data, nrec.d, sizeof(nrec.d));
+                        if (nrec.d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+                        memcpy(t.data, pref->d, sizeof(pref->d));
+                        if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+                        TameType = TAME;
+                        WildType = nrec_type;
+                }
+
+                if (pref_k == 1) w.MulLambdaN();
+                else if (pref_k == 2) w.MulLambda2N();
+                if (nrec_k == 1) t.MulLambdaN();
+                else if (nrec_k == 2) t.MulLambda2N();
+
+                bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
+                if (!res)
+                {
+                        bool w12 = ((pref_type == WILD1) && (nrec_type == WILD2)) || ((pref_type == WILD2) && (nrec_type == WILD1));
+                        if (w12)
+                                ;
+                        else
+                        {
+                                printf("Collision Error\r\n");
+                                gTotalErrors++;
+                        }
+                        continue;
+                }
+                gSolved = true;
+                break;
         }
 }
 
@@ -343,6 +392,7 @@ void ShowStats(u64 tm_start, double exp_ops, double dp_val)
 	printf("%sSpeed: %d MKeys/s, Err: %d, DPs: %lluK/%lluK, Time: %llud:%02dh:%02dm/%llud:%02dh:%02dm\r\n", gGenMode ? "GEN: " : (IsBench ? "BENCH: " : "MAIN: "), speed, gTotalErrors, db.GetBlockCnt()/1000, est_dps_cnt/1000, days, hours, min, exp_days, exp_hours, exp_min);
 }
 
+#if 0
 bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 {
 	if ((Range < 32) || (Range > 180))
@@ -467,8 +517,9 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	gPntToSolve = PntToSolve;
 
 //prepare GPUs
-	for (int i = 0; i < GpuCnt; i++)
-		if (!GpuKangs[i]->Prepare(PntToSolve, Range, DP, EcJumps1, EcJumps2, EcJumps3))
+        int gpuDP = gMultiDP ? (DP - gDpCoarseOffset) : DP;
+        for (int i = 0; i < GpuCnt; i++)
+                if (!GpuKangs[i]->Prepare(PntToSolve, Range, gpuDP, EcJumps1, EcJumps2, EcJumps3))
 		{
 			GpuKangs[i]->Failed = true;
 			printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
@@ -551,10 +602,12 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	double K = (double)PntTotalOps / pow(2.0, Range / 2.0);
 	printf("Point solved, K: %.3f (with DP and GPU overheads)\r\n\r\n", K);
 	db.Clear();
-	*pk_res = gPrivKey;
-	return true;
+        *pk_res = gPrivKey;
+        return true;
 }
+#endif
 
+#if 0
 bool ParseCommandLine(int argc, char* argv[])
 {
 	int ci = 1;
@@ -650,6 +703,26 @@ bool ParseCommandLine(int argc, char* argv[])
                 {
                         gTamesBase128 = true;
                 }
+                else if (strcmp(argument, "--multi-dp") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --multi-dp option\r\n"); return false; }
+                        gMultiDP = atoi(argv[ci]) != 0; ci++;
+                }
+                else if (strcmp(argument, "--dp-coarse-offset") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --dp-coarse-offset option\r\n"); return false; }
+                        gDpCoarseOffset = atoi(argv[ci]); ci++;
+                }
+                else if (strcmp(argument, "--bloom-mbits") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --bloom-mbits option\r\n"); return false; }
+                        gBloomMBits = atoi(argv[ci]); ci++;
+                }
+                else if (strcmp(argument, "--bloom-k") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --bloom-k option\r\n"); return false; }
+                        gBloomK = atoi(argv[ci]); ci++;
+                }
                 else
                 {
                         printf("error: unknown option %s\r\n", argument);
@@ -706,9 +779,12 @@ int main(int argc, char* argv[])
         gMax = 0.0;
         gGenMode = false;
         gIsOpsLimit = false;
-	memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
-	if (!ParseCommandLine(argc, argv))
-		return 0;
+        memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
+        if (!ParseCommandLine(argc, argv))
+                return 0;
+
+        if (gMultiDP)
+                gBloom.Init(gBloomMBits, gBloomK);
 
 	InitGpus();
 
@@ -824,6 +900,7 @@ label_end:
         cudaFree(pPntList2);
         cudaFree(pPntList);
 }
+#endif
 
 void ShowStats(u64 tm_start, double exp_ops, double dp_val)
 {
@@ -1167,6 +1244,26 @@ bool ParseCommandLine(int argc, char* argv[])
                 {
                         gTamesBase128 = true;
                 }
+                else if (strcmp(argument, "--multi-dp") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --multi-dp option\r\n"); return false; }
+                        gMultiDP = atoi(argv[ci]) != 0; ci++;
+                }
+                else if (strcmp(argument, "--dp-coarse-offset") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --dp-coarse-offset option\r\n"); return false; }
+                        gDpCoarseOffset = atoi(argv[ci]); ci++;
+                }
+                else if (strcmp(argument, "--bloom-mbits") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --bloom-mbits option\r\n"); return false; }
+                        gBloomMBits = atoi(argv[ci]); ci++;
+                }
+                else if (strcmp(argument, "--bloom-k") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --bloom-k option\r\n"); return false; }
+                        gBloomK = atoi(argv[ci]); ci++;
+                }
                 else
                 {
                         printf("error: unknown option %s\r\n", argument);
@@ -1223,11 +1320,14 @@ int main(int argc, char* argv[])
         gMax = 0.0;
         gGenMode = false;
         gIsOpsLimit = false;
-	memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
-	if (!ParseCommandLine(argc, argv))
-		return 0;
+        memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
+        if (!ParseCommandLine(argc, argv))
+                return 0;
 
-	InitGpus();
+        if (gMultiDP)
+                gBloom.Init(gBloomMBits, gBloomK);
+
+        InitGpus();
 
 	if (!GpuCnt)
 	{
