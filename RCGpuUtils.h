@@ -59,15 +59,17 @@
 #define P_123		0xFFFFFFFFFFFFFFFFull
 #define P_INV32		0x000003D1
 
-#define Add192to192(res, val) { \
+#define Add192to192(res, val) do { \
   add_cc_64((res)[0], (res)[0], (val)[0]); \
   addc_cc_64((res)[1], (res)[1], (val)[1]); \
-  addc_64((res)[2], (res)[2], (val)[2]); }
+  addc_64((res)[2], (res)[2], (val)[2]); \
+} while (0)
 
-#define Sub192from192(res, val) { \
+#define Sub192from192(res, val) do { \
   sub_cc_64((res)[0], (res)[0], (val)[0]); \
   subc_cc_64((res)[1], (res)[1], (val)[1]); \
-  subc_64((res)[2], (res)[2], (val)[2]); }
+  subc_64((res)[2], (res)[2], (val)[2]); \
+} while (0)
 
 #define Copy_int4_x2(dst, src) {\
   ((int4*)(dst))[0] = ((int4*)(src))[0]; \
