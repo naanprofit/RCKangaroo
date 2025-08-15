@@ -178,11 +178,11 @@ static bool validate_header(const TamesHeader& hdr)
                 return false;
         if (hdr.stride != DB_REC_LEN)
                 return false;
-        if ((hdr.flags & TAMES_FLAG_LE) == 0)
-                return false;
-        if (hdr.flags & ~(TAMES_FLAG_LE | (0xFF << TAMES_RANGE_SHIFT)))
-                return false;
-        return true;
+       if ((hdr.flags & TAMES_FLAG_LE) == 0)
+               return false;
+       if (hdr.flags & ~(TAMES_FLAG_LE | TAMES_FLAG_BASE128 | (0xFF << TAMES_RANGE_SHIFT)))
+               return false;
+       return true;
 }
 
 // http://en.cppreference.com/w/cpp/algorithm/lower_bound
@@ -275,12 +275,17 @@ bool TFastBase::LoadFromFile(char* fn)
                 fclose(fp);
                 return false;
         }
-        if (!validate_header(Header))
-        {
-                fclose(fp);
-                return false;
-        }
-        u64 total = 0;
+       if (!validate_header(Header))
+       {
+               fclose(fp);
+               return false;
+       }
+       if (Header.flags & TAMES_FLAG_BASE128)
+       {
+               fclose(fp);
+               return false;
+       }
+       u64 total = 0;
         for (int i = 0; i < 256; i++)
                 for (int j = 0; j < 256; j++)
                         for (int k = 0; k < 256; k++)
@@ -325,10 +330,11 @@ bool TFastBase::SaveToFile(char* fn)
         FILE* fp = fopen(fn, "wb");
         if (!fp)
                 return false;
-        Header.stride = DB_REC_LEN;
-        Header.version = TAMES_VERSION;
-        Header.flags |= TAMES_FLAG_LE;
-        Header.rec_cnt = GetBlockCnt();
+       Header.stride = DB_REC_LEN;
+       Header.version = TAMES_VERSION;
+       Header.flags &= ~TAMES_FLAG_BASE128;
+       Header.flags |= TAMES_FLAG_LE;
+       Header.rec_cnt = GetBlockCnt();
         if (fwrite(&Header, 1, sizeof(Header), fp) != sizeof(Header))
         {
                 fclose(fp);
@@ -548,10 +554,10 @@ bool TFastBase::SaveToFileBase128(char* fn)
         FILE* fp = fopen(fn, "wb");
         if (!fp)
                 return false;
-        Header.stride = DB_REC_LEN;
-        Header.version = TAMES_VERSION;
-        Header.flags |= TAMES_FLAG_LE;
-        Header.rec_cnt = GetBlockCnt();
+       Header.stride = DB_REC_LEN;
+       Header.version = TAMES_VERSION;
+       Header.flags |= (TAMES_FLAG_LE | TAMES_FLAG_BASE128);
+       Header.rec_cnt = GetBlockCnt();
         if (!write_base128(fp, (u8*)&Header, sizeof(Header)))
         {
                 fclose(fp);
@@ -595,12 +601,17 @@ bool TFastBase::LoadFromFileBase128(char* fn)
                 fclose(fp);
                 return false;
         }
-        if (!validate_header(Header))
-        {
-                fclose(fp);
-                return false;
-        }
-        u64 total = 0;
+       if (!validate_header(Header))
+       {
+               fclose(fp);
+               return false;
+       }
+       if ((Header.flags & TAMES_FLAG_BASE128) == 0)
+       {
+               fclose(fp);
+               return false;
+       }
+       u64 total = 0;
         for (int i = 0; i < 256; i++)
                 for (int j = 0; j < 256; j++)
                         for (int k = 0; k < 256; k++)
@@ -691,14 +702,19 @@ bool TFastBase::OpenMapped(char* fn)
 #endif
         mapped_mode = true;
         u8* p = mapped_ptr;
-        memcpy(&Header, p, sizeof(Header));
-        p += sizeof(Header);
-        if (!validate_header(Header))
-        {
-                CloseMapped();
-                return false;
-        }
-        u64 total = 0;
+       memcpy(&Header, p, sizeof(Header));
+       p += sizeof(Header);
+       if (!validate_header(Header))
+       {
+               CloseMapped();
+               return false;
+       }
+       if (Header.flags & TAMES_FLAG_BASE128)
+       {
+               CloseMapped();
+               return false;
+       }
+       u64 total = 0;
         for (int i = 0; i < 256; i++)
                 for (int j = 0; j < 256; j++)
                         for (int k = 0; k < 256; k++)

@@ -32,9 +32,9 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-max</b>		option to limit max number of operations. For example, value 5.5 limits number of operations to 5.5 * 1.15 * sqrt(range), software stops when the limit is reached. 
 
-<b>-tames</b>           filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. If the file is found, software memory-maps the binary tames to speed up access and automatically falls back to in-memory loading or Base128 if needed.
+<b>-tames</b>           filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. Existing tames are assumed to be in the default binary format and are memory-mapped for speed. Use <code>-base128</code> to read or write legacy Base128 files. The program validates the format via a header flag and aborts on mismatch.
 
-<b>-base128</b>        when generating tames, save the output file in Base128 format instead of the default binary format.
+<b>-base128</b>        when generating or loading tames, use the legacy Base128 format instead of the default binary format.
 
 <b>--phi-fold N</b>    fold points under the secp256k1 endomorphism φ when generating tames. 0 disables folding. 1 (default) folds P with φ(P); 2 also considers φ²(P). Higher values are clamped to 2.
 
@@ -72,7 +72,7 @@ RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a
   enable multiple DP tables and tune the Bloom filter parameters.
 
 Binary tames load much faster because the OS can memory-map them directly. Base128 files are smaller but cannot be memory-mapped and must be fully decoded into RAM at
-startup. Switch between the formats by regenerating the file with or without the <code>-base128</code> flag.
+startup. Files are tagged with a header flag and a mismatched format causes the load to fail. Switch between the formats by regenerating the file with or without the <code>-base128</code> flag.
 
 <b>Binary tames header format:</b>
 
