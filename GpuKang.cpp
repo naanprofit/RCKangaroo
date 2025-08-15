@@ -30,7 +30,7 @@ int RCGpuKang::CalcKangCnt()
 }
 
 //executes in main thread
-bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3)
+bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3, bool phiFold)
 {
 	PntToSolve = _PntToSolve;
 	Range = _Range;
@@ -60,8 +60,9 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
                 printf("GPU %d using coarse DP %d (offset %d)\n", CudaIndex, DP, gDpCoarseOffset);
         Kparams.KernelA_LDS_Size = 64 * JMP_CNT + 16 * Kparams.BlockSize;
 	Kparams.KernelB_LDS_Size = 64 * JMP_CNT;
-	Kparams.KernelC_LDS_Size = 96 * JMP_CNT;
-	Kparams.IsGenMode = gGenMode;
+        Kparams.KernelC_LDS_Size = 96 * JMP_CNT;
+        Kparams.IsGenMode = gGenMode;
+        Kparams.PhiFold = phiFold;
 
 //allocate gpu mem
 	u64 size;

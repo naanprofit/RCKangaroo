@@ -66,6 +66,7 @@ bool gMultiDP = true;
 int gDpCoarseOffset = 0;
 int gBloomMBits = 24;
 int gBloomK = 3;
+int gPhiFold = 1;
 BloomFilter gBloom;
 
 #pragma pack(push, 1)
@@ -492,11 +493,11 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 //prepare GPUs
         int gpuDP = gMultiDP ? (DP - gDpCoarseOffset) : DP;
         for (int i = 0; i < GpuCnt; i++)
-                if (!GpuKangs[i]->Prepare(PntToSolve, Range, gpuDP, EcJumps1, EcJumps2, EcJumps3))
-		{
-			GpuKangs[i]->Failed = true;
-			printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
-		}
+                if (!GpuKangs[i]->Prepare(PntToSolve, Range, gpuDP, EcJumps1, EcJumps2, EcJumps3, gPhiFold != 0))
+                {
+                        GpuKangs[i]->Failed = true;
+                        printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
+                }
 
 	u64 tm0 = GetTickCount64();
 	printf("GPUs started...\r\n");
@@ -677,6 +678,11 @@ bool ParseCommandLine(int argc, char* argv[])
                 {
                         gTamesBase128 = true; // use legacy Base128 tames format
                 }
+                else if (strcmp(argument, "--phi-fold") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --phi-fold option\r\n"); return false; }
+                        gPhiFold = atoi(argv[ci]); ci++;
+                }
                 else if (strcmp(argument, "--multi-dp") == 0)
                 {
                         if (ci >= argc) { printf("error: missed value after --multi-dp option\r\n"); return false; }
@@ -753,6 +759,7 @@ int main(int argc, char* argv[])
         gMax = 0.0;
         gGenMode = false;
         gIsOpsLimit = false;
+        gPhiFold = 1;
         memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
         if (!ParseCommandLine(argc, argv))
                 return 0;
@@ -1041,12 +1048,12 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	gPntToSolve = PntToSolve;
 
 //prepare GPUs
-	for (int i = 0; i < GpuCnt; i++)
-		if (!GpuKangs[i]->Prepare(PntToSolve, Range, DP, EcJumps1, EcJumps2, EcJumps3))
-		{
-			GpuKangs[i]->Failed = true;
-			printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
-		}
+        for (int i = 0; i < GpuCnt; i++)
+                if (!GpuKangs[i]->Prepare(PntToSolve, Range, DP, EcJumps1, EcJumps2, EcJumps3, gPhiFold != 0))
+                {
+                        GpuKangs[i]->Failed = true;
+                        printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
+                }
 
 	u64 tm0 = GetTickCount64();
 	printf("GPUs started...\r\n");
@@ -1225,6 +1232,11 @@ bool ParseCommandLine(int argc, char* argv[])
                 {
                         gTamesBase128 = true; // use legacy Base128 tames format
                 }
+                else if (strcmp(argument, "--phi-fold") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --phi-fold option\r\n"); return false; }
+                        gPhiFold = atoi(argv[ci]); ci++;
+                }
                 else if (strcmp(argument, "--multi-dp") == 0)
                 {
                         if (ci >= argc) { printf("error: missed value after --multi-dp option\r\n"); return false; }
@@ -1301,6 +1313,7 @@ int main(int argc, char* argv[])
         gMax = 0.0;
         gGenMode = false;
         gIsOpsLimit = false;
+        gPhiFold = 1;
         memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
         if (!ParseCommandLine(argc, argv))
                 return 0;

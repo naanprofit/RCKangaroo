@@ -36,7 +36,7 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-base128</b>        when generating tames, save the output file in Base128 format instead of the default binary format.
 
-<b>--phi-fold</b>      fold points under the secp256k1 endomorphism φ when generating tames. Example: "--phi-fold 2" uses both P and φ(P) to shrink the tame set and improve cache locality.
+<b>--phi-fold</b>      fold points under the secp256k1 endomorphism φ when generating tames (non-zero to enable, 0 to disable; default enabled). Example: "--phi-fold 2" uses both P and φ(P) to shrink the tame set and improve cache locality.
 
 <b>--multi-dp</b>      allow multiple distinguished-point tables (1 to enable, 0 to disable). Disabling may save memory at the cost of more DP collisions.
 
