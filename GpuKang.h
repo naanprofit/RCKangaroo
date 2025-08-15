@@ -65,7 +65,7 @@ public:
 	bool IsOldGpu;
 
 	int CalcKangCnt();
-        bool Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3, bool phiFold);
+        bool Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3, u32 phiFold);
 	void Stop();
 	void Execute();
 

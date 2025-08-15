@@ -89,7 +89,7 @@ struct TKparams
 	u32* dbg_buf;
         u32* LoopedKangs;
         bool IsGenMode; //tames generation mode
-        bool PhiFold;   //enable endomorphism folding
+        u32  PhiFold;   //endomorphism folding mode: 0=off, 1=phi(P), 2=phi^2(P)
 
         u32 KernelA_LDS_Size;
         u32 KernelB_LDS_Size;

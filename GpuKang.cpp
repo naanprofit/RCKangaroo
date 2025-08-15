@@ -30,7 +30,7 @@ int RCGpuKang::CalcKangCnt()
 }
 
 //executes in main thread
-bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3, bool phiFold)
+bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3, u32 phiFold)
 {
 	PntToSolve = _PntToSolve;
 	Range = _Range;
@@ -242,21 +242,30 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
                 printf("GPU %d, cuSetGpuParams failed: %s!\r\n", CudaIndex, cudaGetErrorString(err));
                 return false;
         }
-        EcInt beta2 = g_Beta;
-        beta2.MulModP(g_Beta);
-        err = cudaMemcpyToSymbol(BETA, g_Beta.data, 32);
-        if (err != cudaSuccess)
+        if (phiFold)
         {
-                free(jmp2_table);
-                printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
-                return false;
+                EcInt beta2 = g_Beta;
+                beta2.MulModP(g_Beta);
+                err = cudaMemcpyToSymbol(BETA, g_Beta.data, 32);
+                if (err != cudaSuccess)
+                {
+                        free(jmp2_table);
+                        printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                        return false;
+                }
+                err = cudaMemcpyToSymbol(BETA2, beta2.data, 32);
+                if (err != cudaSuccess)
+                {
+                        free(jmp2_table);
+                        printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                        return false;
+                }
         }
-        err = cudaMemcpyToSymbol(BETA2, beta2.data, 32);
-        if (err != cudaSuccess)
+        else
         {
-                free(jmp2_table);
-                printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
-                return false;
+                u64 zero[4] = { 0, 0, 0, 0 };
+                cudaMemcpyToSymbol(BETA, zero, 32);
+                cudaMemcpyToSymbol(BETA2, zero, 32);
         }
         free(jmp2_table);
 //jmp3
