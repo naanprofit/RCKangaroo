@@ -306,6 +306,13 @@ void CheckNewPoints()
                 u8 pref_k = pref->type >> 2;
                 u8 pref_type = pref->type & 3;
 
+                if (pref_k != nrec_k)
+                {
+                        printf("DP collision k mismatch (%u vs %u)\r\n", pref_k, nrec_k);
+                        gTotalErrors++;
+                        continue;
+                }
+
                 if ((pref_type == nrec_type) && (pref_k == nrec_k))
                 {
                         if (pref_type == TAME)
