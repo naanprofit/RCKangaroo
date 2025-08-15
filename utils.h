@@ -129,7 +129,7 @@ public:
         u64 GetBlockCnt();
         bool LoadFromFile(char* fn);
         bool SaveToFile(char* fn);
-        bool LoadFromFileBase128(char* fn); // legacy Base128 support, prefer binary pmap
+        bool LoadFromFileBase128(char* fn); // legacy Base128 support; cannot be memory-mapped and requires full in-memory decoding
         bool SaveToFileBase128(char* fn);   // legacy Base128 support, prefer binary pmap
         bool OpenMapped(char* fn);
         void CloseMapped();

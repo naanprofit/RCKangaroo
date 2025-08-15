@@ -71,7 +71,7 @@ RCKangaroo.exe -dp 16 -range 76 -tames t76.dat -max 10 --phi-fold 2
 RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a4fd8c810b7e42a4b398882b381bcd85e40c6883712912d167c83e73a --multi-dp 1 --bloom-mbits 27 --bloom-k 4
   enable multiple DP tables and tune the Bloom filter parameters.
 
-Binary tames load much faster because the OS can memory-map them directly. Base128 files are smaller but must be decoded at
+Binary tames load much faster because the OS can memory-map them directly. Base128 files are smaller but cannot be memory-mapped and must be fully decoded into RAM at
 startup. Switch between the formats by regenerating the file with or without the <code>-base128</code> flag.
 
 <b>Binary tames header format:</b>
