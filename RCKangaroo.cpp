@@ -7,6 +7,12 @@
 #include <iostream>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/sysinfo.h>
+#endif
+
 #include "cuda_runtime.h"
 #include "cuda.h"
 
@@ -77,29 +83,45 @@ void InitGpus()
 	if (!gcnt)
 		return;
 
-	int drv, rt;
-	cudaRuntimeGetVersion(&rt);
-	cudaDriverGetVersion(&drv);
-	char drvver[100];
-	sprintf(drvver, "%d.%d/%d.%d", drv / 1000, (drv % 100) / 10, rt / 1000, (rt % 100) / 10);
+        int drv, rt;
+        cudaRuntimeGetVersion(&rt);
+        cudaDriverGetVersion(&drv);
+        char drvver[100];
+        sprintf(drvver, "%d.%d/%d.%d", drv / 1000, (drv % 100) / 10, rt / 1000, (rt % 100) / 10);
 
-	printf("CUDA devices: %d, CUDA driver/runtime: %s\r\n", gcnt, drvver);
-	cudaError_t cudaStatus;
-	for (int i = 0; i < gcnt; i++)
-	{
-		cudaStatus = cudaSetDevice(i);
-		if (cudaStatus != cudaSuccess)
-		{
-			printf("cudaSetDevice for gpu %d failed!\r\n", i);
-			continue;
+        printf("CUDA devices: %d, CUDA driver/runtime: %s\r\n", gcnt, drvver);
+
+        double sys_gb = 0.0;
+#ifdef _WIN32
+        MEMORYSTATUSEX statex;
+        statex.dwLength = sizeof(statex);
+        if (GlobalMemoryStatusEx(&statex))
+                sys_gb = (double)statex.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
+#else
+        struct sysinfo info;
+        if (sysinfo(&info) == 0)
+                sys_gb = (double)info.totalram * info.mem_unit / (1024.0 * 1024.0 * 1024.0);
+#endif
+        printf("System memory: %.2f GB\n", sys_gb);
+
+        cudaError_t cudaStatus;
+        for (int i = 0; i < gcnt; i++)
+        {
+                cudaStatus = cudaSetDevice(i);
+                if (cudaStatus != cudaSuccess)
+                {
+                        printf("cudaSetDevice for gpu %d failed!\r\n", i);
+                        continue;
 		}
 
 		if (!gGPUs_Mask[i])
 			continue;
 
-		cudaDeviceProp deviceProp;
-		cudaGetDeviceProperties(&deviceProp, i);
-		printf("GPU %d: %s, %.2f GB, %d CUs, cap %d.%d, PCI %d, L2 size: %d KB\r\n", i, deviceProp.name, ((float)(deviceProp.totalGlobalMem / (1024 * 1024))) / 1024.0f, deviceProp.multiProcessorCount, deviceProp.major, deviceProp.minor, deviceProp.pciBusID, deviceProp.l2CacheSize / 1024);
+                cudaDeviceProp deviceProp;
+                cudaGetDeviceProperties(&deviceProp, i);
+                double gpu_gb = ((double)deviceProp.totalGlobalMem / (1024.0 * 1024.0 * 1024.0));
+                printf("GPU %d: %s, %.2f GB, %d CUs, cap %d.%d, PCI %d, L2 size: %d KB\r\n", i, deviceProp.name, gpu_gb, deviceProp.multiProcessorCount, deviceProp.major, deviceProp.minor, deviceProp.pciBusID, deviceProp.l2CacheSize / 1024);
+                printf("Unified memory (GPU + system): %.2f GB\n", gpu_gb + sys_gb);
 		
 		if (deviceProp.major < 6)
 		{
@@ -680,12 +702,12 @@ int main(int argc, char* argv[])
 		return 0;
 	}
 
-	pPntList = (u8*)malloc(MAX_CNT_LIST * GPU_DP_SIZE);
-	pPntList2 = (u8*)malloc(MAX_CNT_LIST * GPU_DP_SIZE);
-	TotalOps = 0;
-	TotalSolved = 0;
-	gTotalErrors = 0;
-	IsBench = gPubKey.x.IsZero();
+        cudaMallocManaged((void**)&pPntList, MAX_CNT_LIST * GPU_DP_SIZE);
+        cudaMallocManaged((void**)&pPntList2, MAX_CNT_LIST * GPU_DP_SIZE);
+        TotalOps = 0;
+        TotalSolved = 0;
+        gTotalErrors = 0;
+        IsBench = gPubKey.x.IsZero();
 
 	if (!IsBench && !gGenMode)
 	{
@@ -783,7 +805,7 @@ label_end:
 	for (int i = 0; i < GpuCnt; i++)
 		delete GpuKangs[i];
 	DeInitEc();
-	free(pPntList2);
-	free(pPntList);
+        cudaFree(pPntList2);
+        cudaFree(pPntList);
 }
 
