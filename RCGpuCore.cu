@@ -172,8 +172,9 @@ __global__ void KernelA(const TKparams Kparams)
 				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
 				u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 				ind = min(ind, DPTABLE_MAX_CNT - 1);
-				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-				dst[0] = ((int4*)x)[0];
+                                int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 8);
+                                dst[0] = ((int4*)x)[0];
+                                dst[1] = ((int4*)x)[1];
 				jmp_ind |= DP_FLAG;
 			}
 
@@ -415,8 +416,9 @@ __global__ void KernelA(const TKparams Kparams)
 				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
 				u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 				ind = min(ind, DPTABLE_MAX_CNT - 1);
-				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-				dst[0] = ((int4*)x)[0];
+                                int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 8);
+                                dst[0] = ((int4*)x)[0];
+                                dst[1] = ((int4*)x)[1];
 				jmp_ind |= DP_FLAG;
 			}
 
@@ -505,10 +507,7 @@ __device__ __forceinline__ bool is_less_u256(const u64* a, const u64* b)
 __device__ __forceinline__ u32 pick_phi_k_and_xcan(u64* xin, u64* x_can)
 {
     __align__(16) u64 x[4];
-    x[0] = xin[0];
-    x[1] = xin[1];
-    x[2] = 0;
-    x[3] = 0;
+    Copy_u64_x4(x, xin);
 
     __align__(16) u64 xb1[4], xb2[4];
     MulModP(xb1, x, BETA);
@@ -528,18 +527,21 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
 	ind >>= 16;
 	if (ind >= DPTABLE_MAX_CNT)
 		return;
-        int4 rx = *(int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
+        int4* rx = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 8);
+        __align__(16) u64 x_full[4];
+        ((int4*)x_full)[0] = rx[0];
+        ((int4*)x_full)[1] = rx[1];
         __align__(16) u64 x_can[4];
         u32 k;
         if (Kparams.PhiFold)
-                k = pick_phi_k_and_xcan((u64*)&rx, x_can);
+                k = pick_phi_k_and_xcan(x_full, x_can);
         else
         {
-                ((int4*)x_can)[0] = rx;
-                x_can[2] = 0;
-                x_can[3] = 0;
+                Copy_u64_x4(x_can, x_full);
                 k = 0;
         }
+        rx[0] = ((int4*)x_can)[0];
+        rx[1] = make_int4(0, 0, 0, 0);
         u32 pos = atomicAdd(Kparams.DPs_out, 1);
         pos = min(pos, MAX_DP_CNT - 1);
         u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
