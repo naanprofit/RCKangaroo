@@ -87,11 +87,12 @@ struct TKparams
 	u64* LastPnts;
 	u64* LoopTable;
 	u32* dbg_buf;
-	u32* LoopedKangs;
-	bool IsGenMode; //tames generation mode
+        u32* LoopedKangs;
+        bool IsGenMode; //tames generation mode
+        bool PhiFold;   //enable endomorphism folding
 
-	u32 KernelA_LDS_Size;
-	u32 KernelB_LDS_Size;
-	u32 KernelC_LDS_Size;	
+        u32 KernelA_LDS_Size;
+        u32 KernelB_LDS_Size;
+        u32 KernelC_LDS_Size;
 };
 
