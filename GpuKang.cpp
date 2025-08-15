@@ -405,8 +405,14 @@ int RCGpuKang::Dbg_CheckKangs()
 			dist.Neg();
 		}
 		p = ec.MultiplyG_Fast(dist);
-		if (neg)
-			p.y.NegModP();
+                if (neg)
+                        p.y.NegModP();
+                if (p.y.data[0] & 1)
+                {
+                        p.y.NegModP();
+                        dist.Neg();
+                        neg = !neg;
+                }
 		if (i < KangCnt / 3)
 			p = p;
 		else
@@ -414,7 +420,13 @@ int RCGpuKang::Dbg_CheckKangs()
 				p = ec.AddPoints(PntA, p);
 			else
 				p = ec.AddPoints(PntB, p);
-		if (!p.IsEqual(Pnt))
+                if (p.y.data[0] & 1)
+                {
+                        p.y.NegModP();
+                        dist.Neg();
+                        neg = !neg;
+                }
+                if (!p.IsEqual(Pnt))
 			res++;
 	}
 	free(kangs);

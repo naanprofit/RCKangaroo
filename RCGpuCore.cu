@@ -144,12 +144,17 @@ __global__ void KernelA(const TKparams Kparams)
 			SubModP(y, x0, x);
 			MulModP(y, y, tmp);
 			SubModP(y, y, y0);
-			SAVE_VAL_256(L2y, y, group);
+                        if (y[0] & 1)
+                        {
+                                NegModP(y);
+                                jmp_ind ^= INV_FLAG;
+                        }
+                        SAVE_VAL_256(L2y, y, group);
 
 			if (((L1S2 >> group) & 1) == 0) //normal mode, check L1S2 loop
 			{
 				u32 jmp_next = x[0] % JMP_CNT;
-				jmp_next |= ((u32)y[0] & 1) ? 0 : INV_FLAG; //inverted
+				jmp_next |= INV_FLAG;
 				L1S2 |= (jmp_ind == jmp_next) ? (1u << group) : 0; //loop L1S2 detected
 			}
 			else
@@ -382,12 +387,17 @@ __global__ void KernelA(const TKparams Kparams)
 			SubModP(y, x0, x);
 			MulModP(y, y, tmp);
 			SubModP(y, y, y0);
-			SAVE_VAL_256_m(Ly, y, group);
+                          if (y[0] & 1)
+                          {
+                                  NegModP(y);
+                                  jmp_ind ^= INV_FLAG;
+                          }
+                          SAVE_VAL_256_m(Ly, y, group);
 
 			if (((L1S2 >> group) & 1) == 0) //normal mode, check L1S2 loop
 			{
 				u32 jmp_next = x[0] % JMP_CNT;
-				jmp_next |= ((u32)y[0] & 1) ? 0 : INV_FLAG; //inverted
+				jmp_next |= INV_FLAG;
 				L1S2 |= (jmp_ind == jmp_next) ? (1ull << group) : 0; //loop L1S2 detected
 			}
 			else
@@ -732,6 +742,11 @@ __global__ void KernelC(const TKparams Kparams)
 		SubModP(y, x0, x);
 		MulModP(y, y, tmp2);
 		SubModP(y, y, y0);
+                if (y[0] & 1)
+                {
+                        NegModP(y);
+                        inv_flag ^= 1;
+                }
 
 		//save kang
 		Kparams.Kangs[kang_ind * 12 + 0] = x[0];
@@ -749,9 +764,9 @@ __global__ void KernelC(const TKparams Kparams)
 		d[1] = Kparams.Kangs[kang_ind * 12 + 9];
 		d[2] = Kparams.Kangs[kang_ind * 12 + 10];
 		if (inv_flag)
-			Sub192from192(d, jmp3_table + 12 * jmp_ind + 8)
-		else
-			Add192to192(d, jmp3_table + 12 * jmp_ind + 8);
+                        Sub192from192(d, jmp3_table + 12 * jmp_ind + 8);
+                else
+                        Add192to192(d, jmp3_table + 12 * jmp_ind + 8);
 		Kparams.Kangs[kang_ind * 12 + 8] = d[0];
 		Kparams.Kangs[kang_ind * 12 + 9] = d[1];
 		Kparams.Kangs[kang_ind * 12 + 10] = d[2];
