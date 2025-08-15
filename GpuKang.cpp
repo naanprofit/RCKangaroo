@@ -345,13 +345,24 @@ void RCGpuKang::GenerateRndDistances()
 
 bool RCGpuKang::Start()
 {
-	if (Failed)
-		return false;
+        if (Failed)
+                return false;
 
-	cudaError_t err;
-	err = cudaSetDevice(CudaIndex);
-	if (err != cudaSuccess)
-		return false;
+        if (!Kparams.KangCnt || !Kparams.Kangs || !Kparams.DPs_out ||
+                !Kparams.Jumps1 || !Kparams.Jumps2 || !Kparams.Jumps3 ||
+                !Kparams.JumpsList || !Kparams.DPTable || !Kparams.L1S2 ||
+                !Kparams.LastPnts || !Kparams.LoopTable || !Kparams.dbg_buf ||
+                !Kparams.LoopedKangs)
+        {
+                printf("GPU %d Kparams incomplete, aborting\n", CudaIndex);
+                Failed = true;
+                return false;
+        }
+
+        cudaError_t err;
+        err = cudaSetDevice(CudaIndex);
+        if (err != cudaSuccess)
+                return false;
 
 	HalfRange.Set(1);
 	HalfRange.ShiftLeft(Range - 1);
