@@ -11,8 +11,10 @@
 __device__ __constant__ u64 jmp2_table[8 * JMP_CNT];
 
 // endomorphism constants
+extern "C" {
 __device__ __constant__ u64 BETA[4];
 __device__ __constant__ u64 BETA2[4];
+}
 
 
 #define BLOCK_CNT	gridDim.x
