@@ -74,6 +74,7 @@ struct TListRec
 #define TAMES_MAGIC "PMAP"
 #define TAMES_VERSION 1
 #define TAMES_FLAG_LE 0x0001
+#define TAMES_FLAG_BASE128 0x0002
 #define TAMES_RANGE_SHIFT 8
 
 #pragma pack(push, 1)
