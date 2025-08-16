@@ -556,7 +556,9 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
         *(int4*)&DPs[0] = ((int4*)x_can)[0];
         *(int4*)&DPs[4] = ((int4*)x_can)[1];
         *(int4*)&DPs[8] = ((int4*)d)[0];
-        *(u64*)&DPs[12] = d[2];
+        *(u32*)&DPs[12] = (u32)d[2];
+        *(u16*)&DPs[13] = (u16)(d[2] >> 32);
+        *((u16*)&DPs[13] + 1) = 0; // zero padding to keep 22-byte distance
         DPs[14] = (k << 2) | (3 * kang_ind / Kparams.KangCnt); //kang type + phi k
 }
 
