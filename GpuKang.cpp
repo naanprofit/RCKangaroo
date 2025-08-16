@@ -18,8 +18,10 @@ extern bool gGenMode; //tames generation mode
 extern bool gMultiDP;
 extern int gDpCoarseOffset;
 
+extern "C" {
 extern __device__ __constant__ u64 BETA[4];
 extern __device__ __constant__ u64 BETA2[4];
+}
 
 int RCGpuKang::CalcKangCnt()
 {

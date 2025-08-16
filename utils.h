@@ -11,6 +11,11 @@
 #include <vector>
 #include "defs.h"
 
+#ifndef DB_REC_LEN
+#define DB_REC_LEN 32
+#endif
+static_assert(DB_REC_LEN == 32, "DB_REC_LEN must remain 32 bytes");
+
 #ifdef _WIN32
 
 	#include <Windows.h>
@@ -87,6 +92,7 @@ struct TamesHeader
         u64  rec_cnt;
 };
 #pragma pack(pop)
+static_assert(sizeof(TamesHeader) == 16, "TamesHeader size mismatch");
 
 class MemPool
 {
