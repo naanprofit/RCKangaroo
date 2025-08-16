@@ -147,8 +147,14 @@ void DeInitEc()
 // https://en.wikipedia.org/wiki/Elliptic_curve_point_multiplication#Point_addition
 EcPoint Ec::AddPoints(EcPoint& pnt1, EcPoint& pnt2)
 {
-	EcPoint res;
-	EcInt dx, dy, lambda, lambda2;
+        EcPoint res;
+        EcInt dx, dy, lambda, lambda2;
+
+        // Handle addition with the point at infinity represented as (0,0).
+        if (pnt1.x.IsZero() && pnt1.y.IsZero())
+                return pnt2;
+        if (pnt2.x.IsZero() && pnt2.y.IsZero())
+                return pnt1;
 
 	dx = pnt2.x;
 	dx.SubModP(pnt1.x);
@@ -243,6 +249,9 @@ EcPoint Ec::MultiplyG_GLV(EcInt& k)
         static const cpp_int lambda("0x5363AD4CC05C30E0A5261C028812645A122E22EA20816678DF02967C1B23BD72");
         static const cpp_int g1("0x3086D221A7D46BCDE86C90E49284EB153DAA8A1471E8CA7FE893209A45DBB031");
         static const cpp_int g2("0xE4437ED6010E88286F547FA90ABFE4C4221208AC9DF506C61571B4AE8AC47F71");
+        // Precomputed constants from the secp256k1 endomorphism lattice.
+        // `minus_b1` is actually the second basis vector b2, while `minus_b2`
+        // is -b1 mod n. These names are kept for backward compatibility.
         static const cpp_int minus_b1("0xE4437ED6010E88286F547FA90ABFE4C3");
         static const cpp_int minus_b2("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE8A280AC50774346DD765CDA83DB1562C");
 
@@ -270,16 +279,23 @@ EcPoint Ec::MultiplyG_GLV(EcInt& k)
         cpp_int K = to_cpp(k);
         cpp_int c1 = (K * g1 + (cpp_int(1) << 383)) >> 384;
         cpp_int c2 = (K * g2 + (cpp_int(1) << 383)) >> 384;
-        cpp_int r2 = (c1 * minus_b1 + c2 * minus_b2) % order;
-        if (r2 < 0) r2 += order;
-        cpp_int r1 = (K - r2 * lambda) % order;
-        if (r1 < 0) r1 += order;
+        cpp_int r2 = c1 * minus_b1 + c2 * minus_b2;
+        cpp_int r1 = K - r2 * lambda;
+
+        bool neg1 = r1 < 0;
+        bool neg2 = r2 < 0;
+        if (neg1) r1 = -r1;
+        if (neg2) r2 = -r2;
+        r1 %= order;
+        r2 %= order;
 
         EcInt k1 = from_cpp(r1);
         EcInt k2 = from_cpp(r2);
 
         EcPoint p1 = MultiplyG(k1);
+        if (neg1 && !p1.y.IsZero()) p1.y.NegModP();
         EcPoint p2 = MultiplyG(k2);
+        if (neg2 && !p2.y.IsZero()) p2.y.NegModP();
         p2.x.MulModP(g_Beta);
 
         return AddPoints(p1, p2);

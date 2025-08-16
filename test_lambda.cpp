@@ -1,6 +1,7 @@
 #include "defs.h"
 #include "Ec.h"
 #include <cassert>
+#include <cstdio>
 
 int main()
 {
@@ -30,5 +31,6 @@ int main()
         assert(res.IsEqual(key));
     }
 
+    printf("test_lambda: pass\n");
     return 0;
 }
