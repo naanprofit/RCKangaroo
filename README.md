@@ -38,11 +38,17 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>--phi-fold N</b>    fold points under the secp256k1 endomorphism φ when generating tames. 0 disables folding. 1 (default) folds P with φ(P); 2 also considers φ²(P). Higher values are clamped to 2.
 
+<b>--glv-jumps N</b>   build jump tables using GLV multiplication when N=1 (default 0). Use 0 to disable GLV during jump generation.
+
 <b>--multi-dp</b>      allow multiple distinguished-point tables (1 to enable, 0 to disable). Disabling may save memory at the cost of more DP collisions.
 
 <b>--bloom-mbits</b>   size of the Bloom filter in bits, expressed as a power of two. "--bloom-mbits 27" allocates 2^27 bits (~16 MB).
 
 <b>--bloom-k</b>       number of hash functions used by the Bloom filter. Higher values reduce false positives but increase hashing cost.
+
+<b>--self-test-mul</b> run a CPU/GPU multiply consistency check and exit.
+
+<b>--self-test-jumps</b> run a jump-table consistency check against the GPU and exit (requires -range).
 
 When public key is solved, software displays it and also writes it to "RESULTS.TXT" file. 
 

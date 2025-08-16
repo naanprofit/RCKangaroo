@@ -64,7 +64,10 @@ bool gIsOpsLimit;
 const char* gOpsLimitReason = "";
 bool gTamesBase128; // legacy Base128 tames format
 bool gMultiDP = true;
-bool gSelfTest = false;
+bool gSelfTest = false; // legacy single self-test
+bool gSelfTestMul = false;
+bool gSelfTestJumps = false;
+bool gGlvJumps = false;
 int gDpCoarseOffset = 0;
 int gBloomMBits = 24;
 int gBloomK = 3;
@@ -73,6 +76,43 @@ BloomFilter gBloom;
 TamesRecordWriter* gTamesWriter = NULL;
 
 bool GpuCalcKG(EcPoint& out, const EcInt& k, int cuda_index);
+
+void BuildJumpTables(int Range)
+{
+        EcInt minjump, t;
+        minjump.Set(1);
+        minjump.ShiftLeft(Range / 2 + 3);
+        for (int i = 0; i < JMP_CNT; i++)
+        {
+                EcJumps1[i].dist = minjump;
+                t.RndMax(minjump);
+                EcJumps1[i].dist.Add(t);
+                EcJumps1[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFEull;
+                EcJumps1[i].p = gGlvJumps ? ec.MultiplyG_GLV(EcJumps1[i].dist) : ec.MultiplyG(EcJumps1[i].dist);
+        }
+
+        minjump.Set(1);
+        minjump.ShiftLeft(Range - 10);
+        for (int i = 0; i < JMP_CNT; i++)
+        {
+                EcJumps2[i].dist = minjump;
+                t.RndMax(minjump);
+                EcJumps2[i].dist.Add(t);
+                EcJumps2[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFEull;
+                EcJumps2[i].p = gGlvJumps ? ec.MultiplyG_GLV(EcJumps2[i].dist) : ec.MultiplyG(EcJumps2[i].dist);
+        }
+
+        minjump.Set(1);
+        minjump.ShiftLeft(Range - 10 - 2);
+        for (int i = 0; i < JMP_CNT; i++)
+        {
+                EcJumps3[i].dist = minjump;
+                t.RndMax(minjump);
+                EcJumps3[i].dist.Add(t);
+                EcJumps3[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFEull;
+                EcJumps3[i].p = gGlvJumps ? ec.MultiplyG_GLV(EcJumps3[i].dist) : ec.MultiplyG(EcJumps3[i].dist);
+        }
+}
 
 #pragma pack(push, 1)
 struct DBRec
@@ -310,13 +350,6 @@ void CheckNewPoints()
                 u8 pref_k = pref->type >> 2;
                 u8 pref_type = pref->type & 3;
 
-                if (pref_k != nrec_k)
-                {
-                        printf("DP collision k mismatch (%u vs %u)\r\n", pref_k, nrec_k);
-                        gTotalErrors++;
-                        continue;
-                }
-
                 if ((pref_type == nrec_type) && (pref_k == nrec_k))
                 {
                         if (pref_type == TAME)
@@ -328,6 +361,7 @@ void CheckNewPoints()
 
                 EcInt w, t;
                 int TameType, WildType;
+                int phi_t, phi_w;
                 if (pref_type != TAME)
                 {
                         memcpy(w.data, pref->d, sizeof(pref->d));
@@ -336,6 +370,8 @@ void CheckNewPoints()
                         if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
                         TameType = nrec_type;
                         WildType = pref_type;
+                        phi_t = nrec_k;
+                        phi_w = pref_k;
                 }
                 else
                 {
@@ -345,12 +381,13 @@ void CheckNewPoints()
                         if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
                         TameType = TAME;
                         WildType = nrec_type;
+                        phi_t = pref_k;
+                        phi_w = nrec_k;
                 }
 
-                if (pref_k == 1) w.MulLambdaN();
-                else if (pref_k == 2) w.MulLambda2N();
-                if (nrec_k == 1) t.MulLambdaN();
-                else if (nrec_k == 2) t.MulLambda2N();
+                int delta = (phi_w - phi_t + 3) % 3;
+                if (delta == 1) w.MulLambdaN();
+                else if (delta == 2) w.MulLambda2N();
 
                 bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
                 if (!res)
@@ -541,40 +578,8 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	PntTotalOps = 0;
 	PntIndex = 0;
 //prepare jumps
-	EcInt minjump, t;
-	minjump.Set(1);
-	minjump.ShiftLeft(Range / 2 + 3);
-	for (int i = 0; i < JMP_CNT; i++)
-	{
-		EcJumps1[i].dist = minjump;
-		t.RndMax(minjump);
-		EcJumps1[i].dist.Add(t);
-		EcJumps1[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-            EcJumps1[i].p = ec.MultiplyG_GLV(EcJumps1[i].dist);
-	}
-
-	minjump.Set(1);
-	minjump.ShiftLeft(Range - 10); //large jumps for L1S2 loops. Must be almost RANGE_BITS
-	for (int i = 0; i < JMP_CNT; i++)
-	{
-		EcJumps2[i].dist = minjump;
-		t.RndMax(minjump);
-		EcJumps2[i].dist.Add(t);
-		EcJumps2[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-            EcJumps2[i].p = ec.MultiplyG_GLV(EcJumps2[i].dist);
-	}
-
-	minjump.Set(1);
-	minjump.ShiftLeft(Range - 10 - 2); //large jumps for loops >2
-	for (int i = 0; i < JMP_CNT; i++)
-	{
-		EcJumps3[i].dist = minjump;
-		t.RndMax(minjump);
-		EcJumps3[i].dist.Add(t);
-		EcJumps3[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-            EcJumps3[i].p = ec.MultiplyG_GLV(EcJumps3[i].dist);
-	}
-	SetRndSeed(GetTickCount64());
+        BuildJumpTables(Range);
+        SetRndSeed(GetTickCount64());
 
 	Int_HalfRange.Set(1);
 	Int_HalfRange.ShiftLeft(Range - 1);
@@ -794,6 +799,11 @@ bool ParseCommandLine(int argc, char* argv[])
                         if (gPhiFold > 2) gPhiFold = 2;
                         ci++;
                 }
+                else if (strcmp(argument, "--glv-jumps") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --glv-jumps option\r\n"); return false; }
+                        gGlvJumps = atoi(argv[ci]) != 0; ci++;
+                }
                 else if (strcmp(argument, "--multi-dp") == 0)
                 {
                         if (ci >= argc) { printf("error: missed value after --multi-dp option\r\n"); return false; }
@@ -817,6 +827,14 @@ bool ParseCommandLine(int argc, char* argv[])
                 else if (strcmp(argument, "--self-test") == 0)
                 {
                         gSelfTest = true;
+                }
+                else if (strcmp(argument, "--self-test-mul") == 0)
+                {
+                        gSelfTestMul = true;
+                }
+                else if (strcmp(argument, "--self-test-jumps") == 0)
+                {
+                        gSelfTestJumps = true;
                 }
                 else
                 {
@@ -859,6 +877,75 @@ bool RunSelfTest()
                 {
                         printf("Self-test failed: CPU/GPU mismatch on GPU %d\n", GpuKangs[i]->CudaIndex);
                         return false;
+                }
+        }
+        return true;
+}
+
+static void PrintPoint(const char* name, const EcPoint& p)
+{
+        printf("%s x: %016llx %016llx %016llx %016llx\n", name,
+                (unsigned long long)p.x.data[3], (unsigned long long)p.x.data[2],
+                (unsigned long long)p.x.data[1], (unsigned long long)p.x.data[0]);
+        printf("%s y: %016llx %016llx %016llx %016llx\n", name,
+                (unsigned long long)p.y.data[3], (unsigned long long)p.y.data[2],
+                (unsigned long long)p.y.data[1], (unsigned long long)p.y.data[0]);
+}
+
+bool SelfTestMul()
+{
+        EcInt k;
+        k.RndBits(128);
+        EcPoint p_plain = ec.MultiplyG(k);
+        EcPoint p_glv = ec.MultiplyG_GLV(k);
+        if (!p_plain.IsEqual(p_glv))
+        {
+                PrintPoint("plain", p_plain);
+                PrintPoint("glv", p_glv);
+                return false;
+        }
+        for (int i = 0; i < GpuCnt; i++)
+        {
+                EcPoint p_gpu;
+                if (!GpuCalcKG(p_gpu, k, GpuKangs[i]->CudaIndex))
+                {
+                        printf("Self-test-mul failed: GPU %d kernel error\n", GpuKangs[i]->CudaIndex);
+                        return false;
+                }
+                if (!p_gpu.IsEqual(p_plain))
+                {
+                        PrintPoint("cpu", p_plain);
+                        PrintPoint("gpu", p_gpu);
+                        return false;
+                }
+        }
+        return true;
+}
+
+bool SelfTestJumps(int Range)
+{
+        SetRndSeed(0);
+        BuildJumpTables(Range);
+        for (int g = 0; g < GpuCnt; g++)
+        {
+                for (int tbl = 0; tbl < 3; tbl++)
+                {
+                        EcJMP* jumps = tbl == 0 ? EcJumps1 : (tbl == 1 ? EcJumps2 : EcJumps3);
+                        for (int i = 0; i < JMP_CNT; i++)
+                        {
+                                EcPoint p_gpu;
+                                if (!GpuCalcKG(p_gpu, jumps[i].dist, GpuKangs[g]->CudaIndex))
+                                {
+                                        printf("Self-test-jumps failed: GPU %d kernel error\n", GpuKangs[g]->CudaIndex);
+                                        return false;
+                                }
+                                if (!p_gpu.IsEqual(jumps[i].p))
+                                {
+                                        PrintPoint("cpu", jumps[i].p);
+                                        PrintPoint("gpu", p_gpu);
+                                        return false;
+                                }
+                        }
                 }
         }
         return true;
@@ -909,6 +996,31 @@ int main(int argc, char* argv[])
         if (!GpuCnt)
         {
                 printf("No supported GPUs detected, exit\r\n");
+                return 0;
+        }
+
+        if (gSelfTestMul)
+        {
+                if (SelfTestMul())
+                        printf("Self-test-mul passed\n");
+                else
+                {
+                        printf("Self-test-mul FAILED\n");
+                        return 0;
+                }
+                return 0;
+        }
+
+        if (gSelfTestJumps)
+        {
+                int rng = gRange ? gRange : 32;
+                if (SelfTestJumps(rng))
+                        printf("Self-test-jumps passed\n");
+                else
+                {
+                        printf("Self-test-jumps FAILED\n");
+                        return 0;
+                }
                 return 0;
         }
 
