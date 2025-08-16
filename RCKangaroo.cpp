@@ -19,6 +19,7 @@
 #include "defs.h"
 #include "utils.h"
 #include "GpuKang.h"
+#include "Bloom.h"
 
 
 EcJMP EcJumps1[JMP_CNT];
@@ -60,7 +61,58 @@ char gTamesFileName[1024];
 double gMax;
 bool gGenMode; //tames generation mode
 bool gIsOpsLimit;
-bool gTamesBase128;
+const char* gOpsLimitReason = "";
+bool gTamesBase128; // legacy Base128 tames format
+bool gMultiDP = true;
+bool gSelfTest = false; // legacy single self-test
+bool gSelfTestMul = false;
+bool gSelfTestJumps = false;
+bool gGlvJumps = false;
+int gDpCoarseOffset = 0;
+int gBloomMBits = 24;
+int gBloomK = 3;
+int gPhiFold = 1; //phi folding mode
+BloomFilter gBloom;
+TamesRecordWriter* gTamesWriter = NULL;
+
+bool GpuCalcKG(EcPoint& out, const EcInt& k, int cuda_index);
+
+void BuildJumpTables(int Range)
+{
+        EcInt minjump, t;
+        minjump.Set(1);
+        minjump.ShiftLeft(Range / 2 + 3);
+        for (int i = 0; i < JMP_CNT; i++)
+        {
+                EcJumps1[i].dist = minjump;
+                t.RndMax(minjump);
+                EcJumps1[i].dist.Add(t);
+                EcJumps1[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFEull;
+                EcJumps1[i].p = gGlvJumps ? ec.MultiplyG_GLV(EcJumps1[i].dist) : ec.MultiplyG(EcJumps1[i].dist);
+        }
+
+        minjump.Set(1);
+        minjump.ShiftLeft(Range - 10);
+        for (int i = 0; i < JMP_CNT; i++)
+        {
+                EcJumps2[i].dist = minjump;
+                t.RndMax(minjump);
+                EcJumps2[i].dist.Add(t);
+                EcJumps2[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFEull;
+                EcJumps2[i].p = gGlvJumps ? ec.MultiplyG_GLV(EcJumps2[i].dist) : ec.MultiplyG(EcJumps2[i].dist);
+        }
+
+        minjump.Set(1);
+        minjump.ShiftLeft(Range - 10 - 2);
+        for (int i = 0; i < JMP_CNT; i++)
+        {
+                EcJumps3[i].dist = minjump;
+                t.RndMax(minjump);
+                EcJumps3[i].dist.Add(t);
+                EcJumps3[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFEull;
+                EcJumps3[i].p = gGlvJumps ? ec.MultiplyG_GLV(EcJumps3[i].dist) : ec.MultiplyG(EcJumps3[i].dist);
+        }
+}
 
 #pragma pack(push, 1)
 struct DBRec
@@ -182,13 +234,13 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 		gPrivKey.Sub(w);
 		EcInt sv = gPrivKey;
 		gPrivKey.Add(Int_HalfRange);
-		EcPoint P = ec.MultiplyG(gPrivKey);
+            EcPoint P = ec.MultiplyG_GLV(gPrivKey);
 		if (P.IsEqual(pnt))
 			return true;
 		gPrivKey = sv;
 		gPrivKey.Neg();
 		gPrivKey.Add(Int_HalfRange);
-		P = ec.MultiplyG(gPrivKey);
+            P = ec.MultiplyG_GLV(gPrivKey);
 		return P.IsEqual(pnt);
 	}
 	else
@@ -200,13 +252,13 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 		gPrivKey.ShiftRight(1);
 		EcInt sv = gPrivKey;
 		gPrivKey.Add(Int_HalfRange);
-		EcPoint P = ec.MultiplyG(gPrivKey);
+            EcPoint P = ec.MultiplyG_GLV(gPrivKey);
 		if (P.IsEqual(pnt))
 			return true;
 		gPrivKey = sv;
 		gPrivKey.Neg();
 		gPrivKey.Add(Int_HalfRange);
-		P = ec.MultiplyG(gPrivKey);
+            P = ec.MultiplyG_GLV(gPrivKey);
 		return P.IsEqual(pnt);
 	}
 }
@@ -226,80 +278,135 @@ void CheckNewPoints()
 	PntIndex = 0;
 	csAddPoints.Leave();
 
-	for (int i = 0; i < cnt; i++)
-	{
-		DBRec nrec;
-		u8* p = pPntList2 + i * GPU_DP_SIZE;
-		memcpy(nrec.x, p, 12);
-		memcpy(nrec.d, p + 16, 22);
-		nrec.type = gGenMode ? TAME : p[40];
+        for (int i = 0; i < cnt; i++)
+        {
+                u8* p = pPntList2 + i * GPU_DP_SIZE;
 
-                DBRec* pref;
-                if (db.IsMapped())
-                        pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                bool bloom_hit = false;
+                if (gMultiDP)
+                {
+                        u64 x_key = *(u64*)p;
+                        u64 coarse = x_key >> gDpCoarseOffset;
+                        bloom_hit = gBloom.Test(coarse);
+                        gBloom.Add(coarse);
+                        u64 fine_mask = gDpCoarseOffset ? ((1ull << gDpCoarseOffset) - 1) : 0;
+                        if ((x_key & fine_mask) != 0)
+                                continue;
+                }
+
+                DBRec nrec;
+                memcpy(nrec.x, p, 12);
+                memcpy(nrec.d, p + 32, 22);
+                u8 type_byte = gGenMode ? TAME : p[56];
+                u8 nrec_k = type_byte >> 2;
+                u8 nrec_type = type_byte & 3;
+                nrec.type = type_byte;
+
+                if (gGenMode)
+                {
+                        if (gTamesWriter)
+                                TamesRecordWriterWrite(gTamesWriter, (u8*)&nrec);
+                        continue;
+                }
+
+                DBRec* pref = NULL;
+                if (!gMultiDP)
+                {
+                        if (db.IsMapped())
+                                pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                        else
+                                pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
+                        if (!pref)
+                                continue;
+                }
                 else
-                        pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
-		if (gGenMode)
-			continue;
-		if (pref)
-		{
-			//in db we dont store first 3 bytes so restore them
-			DBRec tmp_pref;
-			memcpy(&tmp_pref, &nrec, 3);
-			memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
-			pref = &tmp_pref;
+                {
+                        if (bloom_hit)
+                        {
+                                if (db.IsMapped())
+                                        pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                                else
+                                {
+                                        pref = (DBRec*)db.FindDataBlock((u8*)&nrec);
+                                        if (!pref)
+                                        {
+                                                db.AddDataBlock((u8*)&nrec);
+                                                continue;
+                                        }
+                                }
+                        }
+                        else
+                        {
+                                if (!db.IsMapped())
+                                        db.AddDataBlock((u8*)&nrec);
+                                continue;
+                        }
+                }
 
-			if (pref->type == nrec.type)
-			{
-				if (pref->type == TAME)
-					continue;
+                DBRec tmp_pref;
+                memcpy(&tmp_pref, &nrec, 3);
+                memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
+                pref = &tmp_pref;
+                u8 pref_k = pref->type >> 2;
+                u8 pref_type = pref->type & 3;
 
-				//if it's wild, we can find the key from the same type if distances are different
-				if (*(u64*)pref->d == *(u64*)nrec.d)
-					continue;
-				//else
-				//	ToLog("key found by same wild");
-			}
+                if ((pref_type == nrec_type) && (pref_k == nrec_k))
+                {
+                        if (pref_type == TAME)
+                                continue;
 
-			EcInt w, t;
-			int TameType, WildType;
-			if (pref->type != TAME)
-			{
-				memcpy(w.data, pref->d, sizeof(pref->d));
-				if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-				memcpy(t.data, nrec.d, sizeof(nrec.d));
-				if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-				TameType = nrec.type;
-				WildType = pref->type;
-			}
-			else
-			{
-				memcpy(w.data, nrec.d, sizeof(nrec.d));
-				if (nrec.d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
-				memcpy(t.data, pref->d, sizeof(pref->d));
-				if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
-				TameType = TAME;
-				WildType = nrec.type;
-			}
+                        if (*(u64*)pref->d == *(u64*)nrec.d)
+                                continue;
+                }
 
-			bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
-			if (!res)
-			{
-				bool w12 = ((pref->type == WILD1) && (nrec.type == WILD2)) || ((pref->type == WILD2) && (nrec.type == WILD1));
-				if (w12) //in rare cases WILD and WILD2 can collide in mirror, in this case there is no way to find K
-					;// ToLog("W1 and W2 collides in mirror");
-				else
-				{
-					printf("Collision Error\r\n");
-					gTotalErrors++;
-				}
-				continue;
-			}
-			gSolved = true;
-			break;
-		}
-	}
+                EcInt w, t;
+                int TameType, WildType;
+                int phi_t, phi_w;
+                if (pref_type != TAME)
+                {
+                        memcpy(w.data, pref->d, sizeof(pref->d));
+                        if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+                        memcpy(t.data, nrec.d, sizeof(nrec.d));
+                        if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+                        TameType = nrec_type;
+                        WildType = pref_type;
+                        phi_t = nrec_k;
+                        phi_w = pref_k;
+                }
+                else
+                {
+                        memcpy(w.data, nrec.d, sizeof(nrec.d));
+                        if (nrec.d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+                        memcpy(t.data, pref->d, sizeof(pref->d));
+                        if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+                        TameType = TAME;
+                        WildType = nrec_type;
+                        phi_t = pref_k;
+                        phi_w = nrec_k;
+                }
+
+                int delta = (phi_w - phi_t + 3) % 3;
+                if (delta == 1) w.MulLambdaN();
+                else if (delta == 2) w.MulLambda2N();
+
+                bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
+                if (!res)
+                {
+                        bool w12 = ((pref_type == WILD1) && (nrec_type == WILD2)) || ((pref_type == WILD2) && (nrec_type == WILD1));
+                        if (w12)
+                                ;
+                        else
+                        {
+                                printf("Collision Error\r\n");
+                                gTotalErrors++;
+                        }
+                        continue;
+                }
+                gSolved = true;
+                break;
+        }
 }
+
 
 void ShowStats(u64 tm_start, double exp_ops, double dp_val)
 {
@@ -356,99 +463,127 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	ram += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
 	ram /= (1024 * 1024 * 1024); //GB
 	printf("SOTA method, estimated ops: 2^%.3f, RAM for DPs: %.3f GB. DP and GPU overheads not included!\r\n", log2(ops), ram);
-	gIsOpsLimit = false;
-	double MaxTotalOps = 0.0;
-	if (gMax > 0)
-	{
-		MaxTotalOps = gMax * ops;
-		double ram_max = (32 + 4 + 4) * MaxTotalOps / dp_val; //+4 for grow allocation and memory fragmentation
-		ram_max += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
-		ram_max /= (1024 * 1024 * 1024); //GB
-		printf("Max allowed number of ops: 2^%.3f, max RAM for DPs: %.3f GB\r\n", log2(MaxTotalOps), ram_max);
-	}
-
-	u64 total_kangs = GpuKangs[0]->CalcKangCnt();
-	for (int i = 1; i < GpuCnt; i++)
-		total_kangs += GpuKangs[i]->CalcKangCnt();
-	double path_single_kang = ops / total_kangs;	
-	double DPs_per_kang = path_single_kang / dp_val;
-	printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
-
-        if (!gGenMode && gTamesFileName[0])
+        gIsOpsLimit = false;
+        gOpsLimitReason = "";
+        double MaxTotalOps = 0.0;
+        if (gMax > 0)
         {
-                printf("load tames...\r\n");
-                bool ok = db.OpenMapped(gTamesFileName);
-                if (!ok)
-                {
-                        printf("memory-mapped tames failed, loading into RAM...\r\n");
-                        ok = db.LoadFromFile(gTamesFileName);
-                        if (!ok)
-                        {
-                                printf("binary tames loading failed, trying Base128...\r\n");
-                                ok = db.LoadFromFileBase128(gTamesFileName);
-                                if (ok)
-                                        gTamesBase128 = true;
-                        }
-                        else
-                                gTamesBase128 = false;
-                }
-                else
-                        gTamesBase128 = false;
-                if (ok)
-                {
-                        printf("tames loaded\r\n");
-                        if (db.Header[0] != gRange)
-                        {
-                                printf("loaded tames have different range, they cannot be used, clear\r\n");
-                                db.Clear();
-                        }
-                }
-                else
-                        printf("tames loading failed\r\n");
+                MaxTotalOps = gMax * ops;
+                double ram_max = (32 + 4 + 4) * MaxTotalOps / dp_val; //+4 for grow allocation and memory fragmentation
+                ram_max += sizeof(TListRec) * 256 * 256 * 256; //3byte-prefix table
+                ram_max /= (1024 * 1024 * 1024); //GB
+                printf("Max allowed number of ops: 2^%.3f, max RAM for DPs: %.3f GB\r\n", log2(MaxTotalOps), ram_max);
+                if (MaxTotalOps < ops * 0.1)
+                        printf("WARNING: MaxTotalOps is set very low and the search may stop before finding the key\r\n");
         }
+
+        u64 total_kangs = GpuKangs[0]->CalcKangCnt();
+        for (int i = 1; i < GpuCnt; i++)
+                total_kangs += GpuKangs[i]->CalcKangCnt();
+        double path_single_kang = ops / total_kangs;
+        double DPs_per_kang = path_single_kang / dp_val;
+        printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
+        if (MaxTotalOps > 0.0)
+        {
+                double limit_path_per_kang = MaxTotalOps / total_kangs;
+                double limit_DPs_per_kang = limit_path_per_kang / dp_val;
+                if (limit_DPs_per_kang < 5)
+                        printf("WARNING: gMax is too small for current range and DP; only %.3f DPs per kangaroo allowed\r\n", limit_DPs_per_kang);
+        }
+
+       bool tamesRangeMismatch = false;
+       if (!gGenMode && gTamesFileName[0])
+       {
+               printf("load tames...\r\n");
+               bool fileBase128 = false;
+
+               FILE* tfp = fopen(gTamesFileName, "rb");
+               if (!tfp)
+               {
+                       printf("tames open failed\r\n");
+                       return false;
+               }
+               u8 magic[4];
+               if (fread(magic, 1, 4, tfp) == 4)
+                       fileBase128 = memcmp(magic, TAMES_MAGIC, 4) != 0;
+               else
+               {
+                       printf("tames header read failed\r\n");
+                       fclose(tfp);
+                       return false;
+               }
+               fclose(tfp);
+
+               if (fileBase128 != gTamesBase128)
+               {
+                       printf("error: tames format mismatch; file is %s but %s expected\r\n",
+                               fileBase128 ? "Base128" : "binary", gTamesBase128 ? "Base128" : "binary");
+                       return false;
+               }
+
+               bool ok = false;
+               if (fileBase128)
+               {
+                       ok = db.LoadFromFileBase128(gTamesFileName);
+                       if (ok)
+                               printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+                       else
+                               printf("Base128 tames loading failed\r\n");
+               }
+               else
+               {
+                       ok = db.OpenMapped(gTamesFileName);
+                       if (!ok)
+                       {
+                               printf("memory-mapped tames failed, loading into RAM...\r\n");
+                               ok = db.LoadFromFile(gTamesFileName);
+                               if (!ok)
+                                       printf("binary tames loading failed\r\n");
+                       }
+               }
+
+               if (!ok)
+                       return false;
+
+               bool hdrBase128 = (db.Header.flags & TAMES_FLAG_BASE128) != 0;
+               if (hdrBase128 != gTamesBase128)
+               {
+                       printf("error: tames header format mismatch\r\n");
+                       db.Clear();
+                       return false;
+               }
+               else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
+               {
+                       u32 fileRange = db.Header.flags >> TAMES_RANGE_SHIFT;
+                       printf("WARNING: tames cleared after %llu/%.0f ops. Reason: range mismatch (file:%u expected:%u)\r\n",
+                               PntTotalOps, MaxTotalOps, fileRange, gRange);
+                       db.Clear();
+                       tamesRangeMismatch = true;
+                       printf("Continuing without precomputed tames\r\n");
+               }
+               else
+                       printf("tames loaded\r\n");
+       }
+       else if (gGenMode && gTamesFileName[0])
+       {
+               gTamesWriter = TamesRecordWriterOpen(gTamesFileName, gTamesBase128, sizeof(DBRec));
+               if (!gTamesWriter)
+               {
+                       printf("tames file create failed\r\n");
+                       return false;
+               }
+       }
 
 	SetRndSeed(0); //use same seed to make tames from file compatible
 	PntTotalOps = 0;
 	PntIndex = 0;
 //prepare jumps
-	EcInt minjump, t;
-	minjump.Set(1);
-	minjump.ShiftLeft(Range / 2 + 3);
-	for (int i = 0; i < JMP_CNT; i++)
-	{
-		EcJumps1[i].dist = minjump;
-		t.RndMax(minjump);
-		EcJumps1[i].dist.Add(t);
-		EcJumps1[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-		EcJumps1[i].p = ec.MultiplyG(EcJumps1[i].dist);
-	}
-
-	minjump.Set(1);
-	minjump.ShiftLeft(Range - 10); //large jumps for L1S2 loops. Must be almost RANGE_BITS
-	for (int i = 0; i < JMP_CNT; i++)
-	{
-		EcJumps2[i].dist = minjump;
-		t.RndMax(minjump);
-		EcJumps2[i].dist.Add(t);
-		EcJumps2[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-		EcJumps2[i].p = ec.MultiplyG(EcJumps2[i].dist);
-	}
-
-	minjump.Set(1);
-	minjump.ShiftLeft(Range - 10 - 2); //large jumps for loops >2
-	for (int i = 0; i < JMP_CNT; i++)
-	{
-		EcJumps3[i].dist = minjump;
-		t.RndMax(minjump);
-		EcJumps3[i].dist.Add(t);
-		EcJumps3[i].dist.data[0] &= 0xFFFFFFFFFFFFFFFE; //must be even
-		EcJumps3[i].p = ec.MultiplyG(EcJumps3[i].dist);
-	}
-	SetRndSeed(GetTickCount64());
+        BuildJumpTables(Range);
+        SetRndSeed(GetTickCount64());
 
 	Int_HalfRange.Set(1);
 	Int_HalfRange.ShiftLeft(Range - 1);
-	Pnt_HalfRange = ec.MultiplyG(Int_HalfRange);
+    Pnt_HalfRange = ec.MultiplyG_GLV(Int_HalfRange);
 	Pnt_NegHalfRange = Pnt_HalfRange;
 	Pnt_NegHalfRange.y.NegModP();
 	Int_TameOffset.Set(1);
@@ -460,15 +595,24 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	gPntToSolve = PntToSolve;
 
 //prepare GPUs
-	for (int i = 0; i < GpuCnt; i++)
-		if (!GpuKangs[i]->Prepare(PntToSolve, Range, DP, EcJumps1, EcJumps2, EcJumps3))
-		{
-			GpuKangs[i]->Failed = true;
-			printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
-		}
+        for (int i = 0; i < GpuCnt; i++)
+        {
+                if (!GpuKangs[i]->Prepare(PntToSolve, Range, DP, EcJumps1, EcJumps2, EcJumps3, gPhiFold))
+                {
+                        GpuKangs[i]->Failed = true;
+                        printf("GPU %d Prepare failed\r\n", GpuKangs[i]->CudaIndex);
+                        if (gGenMode && gTamesWriter)
+                        {
+                                TamesRecordWriterClose(gTamesWriter);
+                                gTamesWriter = NULL;
+                        }
+                        db.Clear();
+                        return false;
+                }
+        }
 
-	u64 tm0 = GetTickCount64();
-	printf("GPUs started...\r\n");
+        u64 tm0 = GetTickCount64();
+        printf("GPUs started...\r\n");
 
 #ifdef _WIN32
 	HANDLE thr_handles[MAX_GPU_CNT];
@@ -499,12 +643,13 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 			tm_stats = GetTickCount64();
 		}
 
-		if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
-		{
-			gIsOpsLimit = true;
-			printf("Operations limit reached\r\n");
-			break;
-		}
+                if ((MaxTotalOps > 0.0) && (PntTotalOps > MaxTotalOps))
+                {
+                        gIsOpsLimit = true;
+                        gOpsLimitReason = tamesRangeMismatch ? "ops cap reached; tames not loaded" : "ops cap reached";
+                        printf("Operations limit reached: %llu/%.0f ops. Reason: %s\r\n", PntTotalOps, MaxTotalOps, gOpsLimitReason);
+                        break;
+                }
 	}
 
 	printf("Stopping work ...\r\n");
@@ -521,21 +666,27 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 #endif
 	}
 
-	if (gIsOpsLimit)
-	{
-		if (gGenMode)
-		{
-                        printf("saving tames...\r\n");
-                        db.Header[0] = gRange;
-                        bool ok = gTamesBase128 ? db.SaveToFileBase128(gTamesFileName) : db.SaveToFile(gTamesFileName);
-                        if (ok)
-                                printf("tames saved\r\n");
-                        else
-                                printf("tames saving failed\r\n");
-                }
-		db.Clear();
-		return false;
-	}
+        if (gIsOpsLimit)
+        {
+                printf("Operations limit reached: %llu/%.0f ops. Reason: %s. Search aborted before finding the key\r\n", PntTotalOps, MaxTotalOps, gOpsLimitReason);
+               if (gGenMode)
+               {
+                       printf("saving tames...\r\n");
+                       db.Header.flags = (u16)(TAMES_FLAG_LE | (gRange << TAMES_RANGE_SHIFT) | (gTamesBase128 ? TAMES_FLAG_BASE128 : 0));
+                       bool ok;
+                       if (gTamesBase128)
+                               ok = db.SaveToFileBase128(gTamesFileName);
+                       else
+                               ok = db.SaveToFile(gTamesFileName);
+                       if (ok)
+                               printf("tames saved\r\n");
+                       else
+                               printf("tames saving failed\r\n");
+               }
+               printf("Clearing tames database after %llu/%.0f ops. Reason: %s\r\n", PntTotalOps, MaxTotalOps, gOpsLimitReason);
+               db.Clear();
+               return false;
+       }
 
 	double K = (double)PntTotalOps / pow(2.0, Range / 2.0);
 	printf("Point solved, K: %.3f (with DP and GPU overheads)\r\n\r\n", K);
@@ -546,7 +697,8 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 
 bool ParseCommandLine(int argc, char* argv[])
 {
-	int ci = 1;
+        gTamesBase128 = false;
+        int ci = 1;
 	while (ci < argc)
 	{
 		char* argument = argv[ci];
@@ -624,22 +776,72 @@ bool ParseCommandLine(int argc, char* argv[])
                 }
                 else
                 if (strcmp(argument, "-max") == 0)
-		{
-			double val = atof(argv[ci]);
-			ci++;
-			if (val < 0.001)
-			{
-				printf("error: invalid value for -max option\r\n");
-				return false;
-			}
-			gMax = val;
-		}
-		else
-		{
-			printf("error: unknown option %s\r\n", argument);
-			return false;
-		}
-	}
+                {
+                        double val = atof(argv[ci]);
+                        ci++;
+                        if (val < 0.001)
+                        {
+                                printf("error: invalid value for -max option\r\n");
+                                return false;
+                        }
+                        gMax = val;
+                }
+                else
+                if (strcmp(argument, "-base128") == 0)
+                {
+                        gTamesBase128 = true; // use legacy Base128 tames format
+                }
+                else if (strcmp(argument, "--phi-fold") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --phi-fold option\r\n"); return false; }
+                        gPhiFold = atoi(argv[ci]);
+                        if (gPhiFold < 0) gPhiFold = 0;
+                        if (gPhiFold > 2) gPhiFold = 2;
+                        ci++;
+                }
+                else if (strcmp(argument, "--glv-jumps") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --glv-jumps option\r\n"); return false; }
+                        gGlvJumps = atoi(argv[ci]) != 0; ci++;
+                }
+                else if (strcmp(argument, "--multi-dp") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --multi-dp option\r\n"); return false; }
+                        gMultiDP = atoi(argv[ci]) != 0; ci++;
+                }
+                else if (strcmp(argument, "--dp-coarse-offset") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --dp-coarse-offset option\r\n"); return false; }
+                        gDpCoarseOffset = atoi(argv[ci]); ci++;
+                }
+                else if (strcmp(argument, "--bloom-mbits") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --bloom-mbits option\r\n"); return false; }
+                        gBloomMBits = atoi(argv[ci]); ci++;
+                }
+                else if (strcmp(argument, "--bloom-k") == 0)
+                {
+                        if (ci >= argc) { printf("error: missed value after --bloom-k option\r\n"); return false; }
+                        gBloomK = atoi(argv[ci]); ci++;
+                }
+                else if (strcmp(argument, "--self-test") == 0)
+                {
+                        gSelfTest = true;
+                }
+                else if (strcmp(argument, "--self-test-mul") == 0)
+                {
+                        gSelfTestMul = true;
+                }
+                else if (strcmp(argument, "--self-test-jumps") == 0)
+                {
+                        gSelfTestJumps = true;
+                }
+                else
+                {
+                        printf("error: unknown option %s\r\n", argument);
+                        return false;
+                }
+        }
 	if (!gPubKey.x.IsZero())
 		if (!gStartSet || !gRange || !gDP)
 		{
@@ -656,6 +858,97 @@ bool ParseCommandLine(int argc, char* argv[])
 		gGenMode = true;
 	}
 	return true;
+}
+
+bool RunSelfTest()
+{
+        EcInt k;
+        k.RndBits(128);
+        EcPoint p_cpu = ec.MultiplyG_GLV(k);
+        for (int i = 0; i < GpuCnt; i++)
+        {
+                EcPoint p_gpu;
+                if (!GpuCalcKG(p_gpu, k, GpuKangs[i]->CudaIndex))
+                {
+                        printf("Self-test failed: GPU %d kernel error\n", GpuKangs[i]->CudaIndex);
+                        return false;
+                }
+                if (!p_gpu.IsEqual(p_cpu))
+                {
+                        printf("Self-test failed: CPU/GPU mismatch on GPU %d\n", GpuKangs[i]->CudaIndex);
+                        return false;
+                }
+        }
+        return true;
+}
+
+static void PrintPoint(const char* name, const EcPoint& p)
+{
+        printf("%s x: %016llx %016llx %016llx %016llx\n", name,
+                (unsigned long long)p.x.data[3], (unsigned long long)p.x.data[2],
+                (unsigned long long)p.x.data[1], (unsigned long long)p.x.data[0]);
+        printf("%s y: %016llx %016llx %016llx %016llx\n", name,
+                (unsigned long long)p.y.data[3], (unsigned long long)p.y.data[2],
+                (unsigned long long)p.y.data[1], (unsigned long long)p.y.data[0]);
+}
+
+bool SelfTestMul()
+{
+        EcInt k;
+        k.RndBits(128);
+        EcPoint p_plain = ec.MultiplyG(k);
+        EcPoint p_glv = ec.MultiplyG_GLV(k);
+        if (!p_plain.IsEqual(p_glv))
+        {
+                PrintPoint("plain", p_plain);
+                PrintPoint("glv", p_glv);
+                return false;
+        }
+        for (int i = 0; i < GpuCnt; i++)
+        {
+                EcPoint p_gpu;
+                if (!GpuCalcKG(p_gpu, k, GpuKangs[i]->CudaIndex))
+                {
+                        printf("Self-test-mul failed: GPU %d kernel error\n", GpuKangs[i]->CudaIndex);
+                        return false;
+                }
+                if (!p_gpu.IsEqual(p_plain))
+                {
+                        PrintPoint("cpu", p_plain);
+                        PrintPoint("gpu", p_gpu);
+                        return false;
+                }
+        }
+        return true;
+}
+
+bool SelfTestJumps(int Range)
+{
+        SetRndSeed(0);
+        BuildJumpTables(Range);
+        for (int g = 0; g < GpuCnt; g++)
+        {
+                for (int tbl = 0; tbl < 3; tbl++)
+                {
+                        EcJMP* jumps = tbl == 0 ? EcJumps1 : (tbl == 1 ? EcJumps2 : EcJumps3);
+                        for (int i = 0; i < JMP_CNT; i++)
+                        {
+                                EcPoint p_gpu;
+                                if (!GpuCalcKG(p_gpu, jumps[i].dist, GpuKangs[g]->CudaIndex))
+                                {
+                                        printf("Self-test-jumps failed: GPU %d kernel error\n", GpuKangs[g]->CudaIndex);
+                                        return false;
+                                }
+                                if (!p_gpu.IsEqual(jumps[i].p))
+                                {
+                                        PrintPoint("cpu", jumps[i].p);
+                                        PrintPoint("gpu", p_gpu);
+                                        return false;
+                                }
+                        }
+                }
+        }
+        return true;
 }
 
 int main(int argc, char* argv[])
@@ -686,21 +979,62 @@ int main(int argc, char* argv[])
         gRange = 0;
         gStartSet = false;
         gTamesFileName[0] = 0;
-        gTamesBase128 = false;
         gMax = 0.0;
         gGenMode = false;
         gIsOpsLimit = false;
-	memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
-	if (!ParseCommandLine(argc, argv))
-		return 0;
+        gOpsLimitReason = "";
+        gPhiFold = 1;
+        memset(gGPUs_Mask, 1, sizeof(gGPUs_Mask));
+        if (!ParseCommandLine(argc, argv))
+                return 0;
 
-	InitGpus();
+        if (gMultiDP)
+                gBloom.Init(gBloomMBits, gBloomK);
 
-	if (!GpuCnt)
-	{
-		printf("No supported GPUs detected, exit\r\n");
-		return 0;
-	}
+        InitGpus();
+
+        if (!GpuCnt)
+        {
+                printf("No supported GPUs detected, exit\r\n");
+                return 0;
+        }
+
+        if (gSelfTestMul)
+        {
+                if (SelfTestMul())
+                        printf("Self-test-mul passed\n");
+                else
+                {
+                        printf("Self-test-mul FAILED\n");
+                        return 0;
+                }
+                return 0;
+        }
+
+        if (gSelfTestJumps)
+        {
+                int rng = gRange ? gRange : 32;
+                if (SelfTestJumps(rng))
+                        printf("Self-test-jumps passed\n");
+                else
+                {
+                        printf("Self-test-jumps FAILED\n");
+                        return 0;
+                }
+                return 0;
+        }
+
+        if (gSelfTest)
+        {
+                if (RunSelfTest())
+                        printf("Self-test passed\n");
+                else
+                {
+                        printf("Self-test FAILED\n");
+                        return 0;
+                }
+                return 0;
+        }
 
         cudaMallocManaged((void**)&pPntList, MAX_CNT_LIST * GPU_DP_SIZE);
         cudaMallocManaged((void**)&pPntList2, MAX_CNT_LIST * GPU_DP_SIZE);
@@ -718,7 +1052,7 @@ int main(int argc, char* argv[])
 		PntToSolve = gPubKey;
 		if (!gStart.IsZero())
 		{
-			PntOfs = ec.MultiplyG(gStart);
+                    PntOfs = ec.MultiplyG_GLV(gStart);
 			PntOfs.y.NegModP();
 			PntToSolve = ec.AddPoints(PntToSolve, PntOfs);
 		}
@@ -730,14 +1064,16 @@ int main(int argc, char* argv[])
 		gStart.GetHexStr(sx);
 		printf("Offset: %s\r\n", sx);
 
-		if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
-		{
-			if (!gIsOpsLimit)
-				printf("FATAL ERROR: SolvePoint failed\r\n");
-			goto label_end;
-		}
+                if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
+                {
+                        if (gIsOpsLimit)
+                                printf("Search stopped after %llu operations (%s)\r\n", PntTotalOps, gOpsLimitReason);
+                        else
+                                printf("Key not found\r\n");
+                        goto label_end;
+                }
 		pk_found.AddModP(gStart);
-		EcPoint tmp = ec.MultiplyG(pk_found);
+            EcPoint tmp = ec.MultiplyG_GLV(pk_found);
 		if (!tmp.IsEqual(gPubKey))
 		{
 			printf("FATAL ERROR: SolvePoint found incorrect key\r\n");
@@ -779,14 +1115,16 @@ int main(int argc, char* argv[])
 
 			//generate random pk
 			pk.RndBits(gRange);
-			PntToSolve = ec.MultiplyG(pk);
+                    PntToSolve = ec.MultiplyG_GLV(pk);
 
-			if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
-			{
-				if (!gIsOpsLimit)
-					printf("FATAL ERROR: SolvePoint failed\r\n");
-				break;
-			}
+                        if (!SolvePoint(PntToSolve, gRange, gDP, &pk_found))
+                        {
+                                if (gIsOpsLimit)
+                                        printf("Benchmark stopped after %llu operations (%s)\r\n", PntTotalOps, gOpsLimitReason);
+                                else
+                                        printf("Benchmark stopped: key not found\r\n");
+                                break;
+                        }
 			if (!pk_found.IsEqual(pk))
 			{
 				printf("FATAL ERROR: Found key is wrong!\r\n");

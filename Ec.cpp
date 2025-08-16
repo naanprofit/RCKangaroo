@@ -7,11 +7,15 @@
 #include "defs.h"
 #include "Ec.h"
 #include <random>
+#include <boost/multiprecision/cpp_int.hpp>
 #include "utils.h"
 
 // https://en.bitcoin.it/wiki/Secp256k1
 EcInt g_P; //FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F
 EcPoint g_G; //Generator point
+EcInt g_Lambda; //GLV eigenvalue
+EcInt g_Beta;   //cube root of unity
+EcInt g_Lambda2; //lambda squared mod n
 
 #define P_REV	0x00000001000003D1
 
@@ -108,11 +112,15 @@ bool EcPoint::SetHexStr(const char* str)
 // https://en.bitcoin.it/wiki/Secp256k1
 void InitEc()
 {
-	g_P.SetHexStr("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F"); //Fp
-	g_G.x.SetHexStr("79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798"); //G.x
-	g_G.y.SetHexStr("483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8"); //G.y
+        g_P.SetHexStr("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F"); //Fp
+        g_G.x.SetHexStr("79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798"); //G.x
+        g_G.y.SetHexStr("483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8"); //G.y
+        g_Lambda.SetHexStr("5363AD4CC05C30E0A5261C028812645A122E22EA20816678DF02967C1B23BD72");
+        g_Beta.SetHexStr("7AE96A2B657C07106E64479EAC3434E99CF0497512F58995C1396C28719501EE");
+        g_Lambda2 = g_Lambda;
+        g_Lambda2.MulModN(g_Lambda);
 #ifdef DEBUG_MODE
-	GTable = (u8*)malloc(16 * 256 * 256 * 64);
+        GTable = (u8*)malloc(16 * 256 * 256 * 64);
 	EcPoint pnt = g_G;
 	for (int i = 0; i < 16; i++)
 	{
@@ -224,6 +232,57 @@ EcPoint Ec::MultiplyG(EcInt& k)
 		t = Ec::DoublePoint(t);
 	}
 	return res;
+}
+
+// GLV-based multiplication using endomorphism
+EcPoint Ec::MultiplyG_GLV(EcInt& k)
+{
+        using boost::multiprecision::cpp_int;
+
+        static const cpp_int order("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141");
+        static const cpp_int lambda("0x5363AD4CC05C30E0A5261C028812645A122E22EA20816678DF02967C1B23BD72");
+        static const cpp_int g1("0x3086D221A7D46BCDE86C90E49284EB153DAA8A1471E8CA7FE893209A45DBB031");
+        static const cpp_int g2("0xE4437ED6010E88286F547FA90ABFE4C4221208AC9DF506C61571B4AE8AC47F71");
+        static const cpp_int minus_b1("0xE4437ED6010E88286F547FA90ABFE4C3");
+        static const cpp_int minus_b2("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE8A280AC50774346DD765CDA83DB1562C");
+
+        auto to_cpp = [](const EcInt& a) {
+                cpp_int r = 0;
+                for (int i = 3; i >= 0; --i)
+                {
+                        r <<= 64;
+                        r += a.data[i];
+                }
+                return r;
+        };
+        auto from_cpp = [](const cpp_int& x) {
+                EcInt r;
+                cpp_int t = x;
+                for (int i = 0; i < 4; ++i)
+                {
+                        r.data[i] = (u64)(t & 0xFFFFFFFFFFFFFFFFULL);
+                        t >>= 64;
+                }
+                r.data[4] = 0;
+                return r;
+        };
+
+        cpp_int K = to_cpp(k);
+        cpp_int c1 = (K * g1 + (cpp_int(1) << 383)) >> 384;
+        cpp_int c2 = (K * g2 + (cpp_int(1) << 383)) >> 384;
+        cpp_int r2 = (c1 * minus_b1 + c2 * minus_b2) % order;
+        if (r2 < 0) r2 += order;
+        cpp_int r1 = (K - r2 * lambda) % order;
+        if (r1 < 0) r1 += order;
+
+        EcInt k1 = from_cpp(r1);
+        EcInt k2 = from_cpp(r2);
+
+        EcPoint p1 = MultiplyG(k1);
+        EcPoint p2 = MultiplyG(k2);
+        p2.x.MulModP(g_Beta);
+
+        return AddPoints(p1, p2);
 }
 
 #ifdef DEBUG_MODE
@@ -510,7 +569,7 @@ void EcInt::ShiftLeft(int nbits)
 }
 
 void EcInt::MulModP(EcInt& val)
-{	
+{
 	u64 buff[8], tmp[5], h;
 	//calc 512 bits
 	Mul256_by_64(val.data, data[0], buff);
@@ -530,8 +589,37 @@ void EcInt::MulModP(EcInt& val)
 	c = _addcarry_u64(c, buff[1], h, data + 1);
 	c = _addcarry_u64(c, 0, buff[2], data + 2);
 	data[4] = _addcarry_u64(c, buff[3], 0, data + 3);
-	while (data[4])
-		Sub(g_P);
+        while (data[4])
+                Sub(g_P);
+}
+
+void EcInt::MulModN(const EcInt& val)
+{
+        using boost::multiprecision::cpp_int;
+        static const cpp_int order("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141");
+        cpp_int a = 0, b = 0;
+        for (int i = 3; i >= 0; --i)
+        {
+                a <<= 64; a += data[i];
+                b <<= 64; b += val.data[i];
+        }
+        cpp_int r = (a * b) % order;
+        for (int i = 0; i < 4; ++i)
+        {
+                data[i] = (u64)(r & 0xFFFFFFFFFFFFFFFFULL);
+                r >>= 64;
+        }
+        data[4] = 0;
+}
+
+void EcInt::MulLambdaN()
+{
+        MulModN(g_Lambda);
+}
+
+void EcInt::MulLambda2N()
+{
+        MulModN(g_Lambda2);
 }
 
 void EcInt::Mul_u64(EcInt& val, u64 multiplier)

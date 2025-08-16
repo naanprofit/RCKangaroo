@@ -32,7 +32,23 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>-max</b>		option to limit max number of operations. For example, value 5.5 limits number of operations to 5.5 * 1.15 * sqrt(range), software stops when the limit is reached. 
 
-<b>-tames</b>           filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. If the file is found, software memory-maps the binary tames to speed up access and automatically falls back to in-memory loading or Base128 if needed.
+<b>-tames</b>           filename with tames. If file not found, software generates tames (option "-max" is required) and saves them to the file. The loader inspects the file header to auto-detect whether the tames are in binary or Base128 format. Binary files are memory-mapped for speed, while Base128 files must be fully decoded. Use <code>-base128</code> to read or write legacy Base128 files. A mismatch between the detected format and the <code>-base128</code> flag aborts the load.
+
+<b>-base128</b>        when generating or loading tames, use the legacy Base128 format instead of the default binary format.
+
+<b>--phi-fold N</b>    fold points under the secp256k1 endomorphism φ when generating tames. 0 disables folding. 1 (default) folds P with φ(P); 2 also considers φ²(P). Higher values are clamped to 2.
+
+<b>--glv-jumps N</b>   build jump tables using GLV multiplication when N=1 (default 0). Use 0 to disable GLV during jump generation.
+
+<b>--multi-dp</b>      allow multiple distinguished-point tables (1 to enable, 0 to disable). Disabling may save memory at the cost of more DP collisions.
+
+<b>--bloom-mbits</b>   size of the Bloom filter in bits, expressed as a power of two. "--bloom-mbits 27" allocates 2^27 bits (~16 MB).
+
+<b>--bloom-k</b>       number of hash functions used by the Bloom filter. Higher values reduce false positives but increase hashing cost.
+
+<b>--self-test-mul</b> run a CPU/GPU multiply consistency check and exit.
+
+<b>--self-test-jumps</b> run a jump-table consistency check against the GPU and exit (requires -range).
 
 When public key is solved, software displays it and also writes it to "RESULTS.TXT" file. 
 
@@ -49,6 +65,25 @@ You can also quickly generate a tames file using the helper tool (count paramete
 Add the <code>-base128</code> flag to emit a Base128 encoded file instead of the default binary format.
 
 Then you can restart software with same parameters to see less K in benchmark mode or add "-tames tames76.dat" to solve some public key in 76-bit range faster.
+
+Examples of additional options:
+
+RCKangaroo.exe -dp 16 -range 76 -tames tames76.dat -max 10 -base128
+  save the generated tames in Base128 format.
+
+RCKangaroo.exe -dp 16 -range 76 -tames t76.dat -max 10 --phi-fold 2
+  fold each point with its φ(P) and φ²(P) images to reduce the table size.
+
+RCKangaroo.exe -dp 16 -range 84 -start 1000000000000000000000 -pubkey 0329c4574a4fd8c810b7e42a4b398882b381bcd85e40c6883712912d167c83e73a --multi-dp 1 --bloom-mbits 27 --bloom-k 4
+  enable multiple DP tables and tune the Bloom filter parameters.
+
+Binary tames load much faster because the OS can memory-map them directly. Base128 files are smaller but cannot be memory-mapped and must be fully decoded into RAM at startup. The loader inspects the header to determine the format and fails if it does not match the <code>-base128</code> option. Switch between the formats by regenerating the file with or without the <code>-base128</code> flag.
+
+<b>Binary tames header format:</b>
+
+Binary files begin with the following structure (little-endian unless the flag bit 0 is cleared):
+magic="PMAP" | version=1 | stride=DP record size | flags | rec_cnt
+Bits 8..15 of <code>flags</code> encode the bit range shift. See <code>utils.h</code> for details.
 
 <b>Some notes:</b>
 

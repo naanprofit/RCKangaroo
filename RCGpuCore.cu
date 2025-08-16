@@ -10,6 +10,12 @@
 //imp2 table points for KernelA
 __device__ __constant__ u64 jmp2_table[8 * JMP_CNT];
 
+// endomorphism constants
+extern "C" {
+__device__ __constant__ u64 BETA[4];
+__device__ __constant__ u64 BETA2[4];
+}
+
 
 #define BLOCK_CNT	gridDim.x
 #define BLOCK_X		blockIdx.x
@@ -144,12 +150,17 @@ __global__ void KernelA(const TKparams Kparams)
 			SubModP(y, x0, x);
 			MulModP(y, y, tmp);
 			SubModP(y, y, y0);
-			SAVE_VAL_256(L2y, y, group);
+                        if (y[0] & 1)
+                        {
+                                NegModP(y);
+                                jmp_ind ^= INV_FLAG;
+                        }
+                        SAVE_VAL_256(L2y, y, group);
 
 			if (((L1S2 >> group) & 1) == 0) //normal mode, check L1S2 loop
 			{
 				u32 jmp_next = x[0] % JMP_CNT;
-				jmp_next |= ((u32)y[0] & 1) ? 0 : INV_FLAG; //inverted
+				jmp_next |= INV_FLAG;
 				L1S2 |= (jmp_ind == jmp_next) ? (1u << group) : 0; //loop L1S2 detected
 			}
 			else
@@ -163,8 +174,9 @@ __global__ void KernelA(const TKparams Kparams)
 				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
 				u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 				ind = min(ind, DPTABLE_MAX_CNT - 1);
-				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-				dst[0] = ((int4*)x)[0];
+                                int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 8);
+                                dst[0] = ((int4*)x)[0];
+                                dst[1] = ((int4*)x)[1];
 				jmp_ind |= DP_FLAG;
 			}
 
@@ -382,12 +394,17 @@ __global__ void KernelA(const TKparams Kparams)
 			SubModP(y, x0, x);
 			MulModP(y, y, tmp);
 			SubModP(y, y, y0);
-			SAVE_VAL_256_m(Ly, y, group);
+                          if (y[0] & 1)
+                          {
+                                  NegModP(y);
+                                  jmp_ind ^= INV_FLAG;
+                          }
+                          SAVE_VAL_256_m(Ly, y, group);
 
 			if (((L1S2 >> group) & 1) == 0) //normal mode, check L1S2 loop
 			{
 				u32 jmp_next = x[0] % JMP_CNT;
-				jmp_next |= ((u32)y[0] & 1) ? 0 : INV_FLAG; //inverted
+				jmp_next |= INV_FLAG;
 				L1S2 |= (jmp_ind == jmp_next) ? (1ull << group) : 0; //loop L1S2 detected
 			}
 			else
@@ -401,8 +418,9 @@ __global__ void KernelA(const TKparams Kparams)
 				u32 kang_ind = (THREAD_X + BLOCK_X * BLOCK_SIZE) * PNT_GROUP_CNT + group;
 				u32 ind = atomicAdd(Kparams.DPTable + kang_ind, 1);
 				ind = min(ind, DPTABLE_MAX_CNT - 1);
-				int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-				dst[0] = ((int4*)x)[0];
+                                int4* dst = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 8);
+                                dst[0] = ((int4*)x)[0];
+                                dst[1] = ((int4*)x)[1];
 				jmp_ind |= DP_FLAG;
 			}
 
@@ -480,6 +498,35 @@ __global__ void KernelA(const TKparams Kparams)
 
 #endif
 
+__device__ __forceinline__ bool is_less_u256(const u64* a, const u64* b)
+{
+    if (a[3] != b[3]) return a[3] < b[3];
+    if (a[2] != b[2]) return a[2] < b[2];
+    if (a[1] != b[1]) return a[1] < b[1];
+    return a[0] < b[0];
+}
+
+__device__ __forceinline__ u32 pick_phi_k_and_xcan(u64* xin, u64* x_can, u32 mode)
+{
+    __align__(16) u64 x[4];
+    Copy_u64_x4(x, xin);
+
+    u32 k = 0;
+    Copy_u64_x4(x_can, x);
+    if (mode > 0)
+    {
+        __align__(16) u64 xb1[4];
+        MulModP(xb1, x, BETA);
+        if (is_less_u256(xb1, x_can)) { k = 1; Copy_u64_x4(x_can, xb1); }
+        if (mode > 1)
+        {
+            __align__(16) u64 xb2[4];
+            MulModP(xb2, x, BETA2);
+            if (is_less_u256(xb2, x_can)) { k = 2; Copy_u64_x4(x_can, xb2); }
+        }
+    }
+    return k;
+}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u64* d)
@@ -488,14 +535,31 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
 	ind >>= 16;
 	if (ind >= DPTABLE_MAX_CNT)
 		return;
-	int4 rx = *(int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 4);
-	u32 pos = atomicAdd(Kparams.DPs_out, 1);
-	pos = min(pos, MAX_DP_CNT - 1);
-	u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
-	*(int4*)&DPs[0] = rx;
-	*(int4*)&DPs[4] = ((int4*)d)[0];
-	*(u64*)&DPs[8] = d[2];
-	DPs[10] = 3 * kang_ind / Kparams.KangCnt; //kang type
+        int4* rx = (int4*)(Kparams.DPTable + Kparams.KangCnt + (kang_ind * DPTABLE_MAX_CNT + ind) * 8);
+        __align__(16) u64 x_full[4];
+        ((int4*)x_full)[0] = rx[0];
+        ((int4*)x_full)[1] = rx[1];
+        __align__(16) u64 x_can[4];
+        u32 k;
+        if (Kparams.PhiFold)
+                k = pick_phi_k_and_xcan(x_full, x_can, Kparams.PhiFold);
+        else
+        {
+                Copy_u64_x4(x_can, x_full);
+                k = 0;
+        }
+        rx[0] = ((int4*)x_can)[0];
+        rx[1] = ((int4*)x_can)[1];
+        u32 pos = atomicAdd(Kparams.DPs_out, 1);
+        pos = min(pos, MAX_DP_CNT - 1);
+        u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
+        *(int4*)&DPs[0] = ((int4*)x_can)[0];
+        *(int4*)&DPs[4] = ((int4*)x_can)[1];
+        *(int4*)&DPs[8] = ((int4*)d)[0];
+        *(u32*)&DPs[12] = (u32)d[2];
+        *(u16*)&DPs[13] = (u16)(d[2] >> 32);
+        *((u16*)&DPs[13] + 1) = 0; // zero padding to keep 22-byte distance
+        DPs[14] = (k << 2) | (3 * kang_ind / Kparams.KangCnt); //kang type + phi k
 }
 
 __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64* d, u32 kang_ind, u64* jmp1_d, u64* jmp2_d, const TKparams& Kparams, u64* table, u32* cur_ind, u8 iter)
@@ -506,10 +570,10 @@ __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64
 	((int4*)(jmp))[0] = ((int4*)(jmp_d + 4 * (d_cur & JMP_MASK)))[0];
 	jmp[2] = *(jmp_d + 4 * (d_cur & JMP_MASK) + 2);
 
-	if (d_cur & INV_FLAG)
-		Sub192from192(d, jmp)
-	else
-		Add192to192(d, jmp);
+        if (d_cur & INV_FLAG)
+                Sub192from192(d, jmp);
+        else
+                Add192to192(d, jmp);
 
 	//check in table
 	int found_ind = iter + MD_LEN - 4;
@@ -732,6 +796,11 @@ __global__ void KernelC(const TKparams Kparams)
 		SubModP(y, x0, x);
 		MulModP(y, y, tmp2);
 		SubModP(y, y, y0);
+                if (y[0] & 1)
+                {
+                        NegModP(y);
+                        inv_flag ^= 1;
+                }
 
 		//save kang
 		Kparams.Kangs[kang_ind * 12 + 0] = x[0];
@@ -749,9 +818,9 @@ __global__ void KernelC(const TKparams Kparams)
 		d[1] = Kparams.Kangs[kang_ind * 12 + 9];
 		d[2] = Kparams.Kangs[kang_ind * 12 + 10];
 		if (inv_flag)
-			Sub192from192(d, jmp3_table + 12 * jmp_ind + 8)
-		else
-			Add192to192(d, jmp3_table + 12 * jmp_ind + 8);
+                        Sub192from192(d, jmp3_table + 12 * jmp_ind + 8);
+                else
+                        Add192to192(d, jmp3_table + 12 * jmp_ind + 8);
 		Kparams.Kangs[kang_ind * 12 + 8] = d[0];
 		Kparams.Kangs[kang_ind * 12 + 9] = d[1];
 		Kparams.Kangs[kang_ind * 12 + 10] = d[2];

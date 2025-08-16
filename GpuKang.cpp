@@ -15,6 +15,13 @@ void CallGpuKernelGen(TKparams Kparams);
 void CallGpuKernelABC(TKparams Kparams);
 void AddPointsToList(u32* data, int cnt, u64 ops_cnt);
 extern bool gGenMode; //tames generation mode
+extern bool gMultiDP;
+extern int gDpCoarseOffset;
+
+extern "C" {
+extern __device__ __constant__ u64 BETA[4];
+extern __device__ __constant__ u64 BETA2[4];
+}
 
 int RCGpuKang::CalcKangCnt()
 {
@@ -25,7 +32,7 @@ int RCGpuKang::CalcKangCnt()
 }
 
 //executes in main thread
-bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3)
+bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJumps1, EcJMP* _EcJumps2, EcJMP* _EcJumps3, u32 phiFold)
 {
 	PntToSolve = _PntToSolve;
 	Range = _Range;
@@ -49,12 +56,15 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	Kparams.BlockSize = IsOldGpu ? 512 : 256;
 	Kparams.GroupCnt = IsOldGpu ? 64 : 24;
 	KangCnt = Kparams.BlockSize * Kparams.GroupCnt * Kparams.BlockCnt;
-	Kparams.KangCnt = KangCnt;
-	Kparams.DP = DP;
-	Kparams.KernelA_LDS_Size = 64 * JMP_CNT + 16 * Kparams.BlockSize;
+        Kparams.KangCnt = KangCnt;
+        Kparams.DP = DP;
+        if (gMultiDP)
+                printf("GPU %d using coarse DP %d (offset %d)\n", CudaIndex, DP, gDpCoarseOffset);
+        Kparams.KernelA_LDS_Size = 64 * JMP_CNT + 16 * Kparams.BlockSize;
 	Kparams.KernelB_LDS_Size = 64 * JMP_CNT;
-	Kparams.KernelC_LDS_Size = 96 * JMP_CNT;
-	Kparams.IsGenMode = gGenMode;
+        Kparams.KernelC_LDS_Size = 96 * JMP_CNT;
+        Kparams.IsGenMode = gGenMode;
+        Kparams.PhiFold = phiFold;
 
 //allocate gpu mem
 	u64 size;
@@ -138,7 +148,7 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 		return false;
 	}
 
-	size = (u64)KangCnt * (16 * DPTABLE_MAX_CNT + sizeof(u32)); //we store 16bytes of X
+        size = (u64)KangCnt * (32 * DPTABLE_MAX_CNT + sizeof(u32)); //we store 32bytes of X
 	total_mem += size;
 	err = cudaMallocManaged((void**)&Kparams.DPTable, size);
 	if (err != cudaSuccess)
@@ -227,14 +237,47 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
 	}
 	free(buf);
 
-	err = cuSetGpuParams(Kparams, jmp2_table);
-	if (err != cudaSuccess)
-	{
-		free(jmp2_table);
-		printf("GPU %d, cuSetGpuParams failed: %s!\r\n", CudaIndex, cudaGetErrorString(err));
-		return false;
-	}
-	free(jmp2_table);
+        err = cuSetGpuParams(Kparams, jmp2_table);
+        if (err != cudaSuccess)
+        {
+                free(jmp2_table);
+                printf("GPU %d, cuSetGpuParams failed: %s!\r\n", CudaIndex, cudaGetErrorString(err));
+                return false;
+        }
+        if (phiFold)
+        {
+                EcInt beta2 = g_Beta;
+                beta2.MulModP(g_Beta);
+                if ((err = cudaMemcpyToSymbol(BETA, g_Beta.data, sizeof(u64) * 4)) != cudaSuccess)
+                {
+                        free(jmp2_table);
+                        printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                        return false;
+                }
+                if ((err = cudaMemcpyToSymbol(BETA2, beta2.data, sizeof(u64) * 4)) != cudaSuccess)
+                {
+                        free(jmp2_table);
+                        printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                        return false;
+                }
+        }
+        else
+        {
+                u64 zero[4] = { 0, 0, 0, 0 };
+                if ((err = cudaMemcpyToSymbol(BETA, zero, sizeof(zero))) != cudaSuccess)
+                {
+                        free(jmp2_table);
+                        printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                        return false;
+                }
+                if ((err = cudaMemcpyToSymbol(BETA2, zero, sizeof(zero))) != cudaSuccess)
+                {
+                        free(jmp2_table);
+                        printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
+                        return false;
+                }
+        }
+        free(jmp2_table);
 //jmp3
 	buf = (u64*)malloc(JMP_CNT * 96);
 	for (int i = 0; i < JMP_CNT; i++)
@@ -298,17 +341,28 @@ void RCGpuKang::GenerateRndDistances()
 
 bool RCGpuKang::Start()
 {
-	if (Failed)
-		return false;
+        if (Failed)
+                return false;
 
-	cudaError_t err;
-	err = cudaSetDevice(CudaIndex);
-	if (err != cudaSuccess)
-		return false;
+        if (!Kparams.KangCnt || !Kparams.Kangs || !Kparams.DPs_out ||
+                !Kparams.Jumps1 || !Kparams.Jumps2 || !Kparams.Jumps3 ||
+                !Kparams.JumpsList || !Kparams.DPTable || !Kparams.L1S2 ||
+                !Kparams.LastPnts || !Kparams.LoopTable || !Kparams.dbg_buf ||
+                !Kparams.LoopedKangs)
+        {
+                printf("GPU %d Kparams incomplete, aborting\n", CudaIndex);
+                Failed = true;
+                return false;
+        }
+
+        cudaError_t err;
+        err = cudaSetDevice(CudaIndex);
+        if (err != cudaSuccess)
+                return false;
 
 	HalfRange.Set(1);
 	HalfRange.ShiftLeft(Range - 1);
-	PntHalfRange = ec.MultiplyG(HalfRange);
+    PntHalfRange = ec.MultiplyG_GLV(HalfRange);
 	NegPntHalfRange = PntHalfRange;
 	NegPntHalfRange.y.NegModP();
 
@@ -326,7 +380,7 @@ bool RCGpuKang::Start()
 		memcpy(d.data, RndPnts[i].priv, 24);
 		d.data[3] = 0;
 		d.data[4] = 0;
-		EcPoint p = ec.MultiplyG(d);
+            EcPoint p = ec.MultiplyG_GLV(d);
 		memcpy(RndPnts[i].x, p.x.data, 32);
 		memcpy(RndPnts[i].y, p.y.data, 32);
 	}
@@ -405,8 +459,14 @@ int RCGpuKang::Dbg_CheckKangs()
 			dist.Neg();
 		}
 		p = ec.MultiplyG_Fast(dist);
-		if (neg)
-			p.y.NegModP();
+                if (neg)
+                        p.y.NegModP();
+                if (p.y.data[0] & 1)
+                {
+                        p.y.NegModP();
+                        dist.Neg();
+                        neg = !neg;
+                }
 		if (i < KangCnt / 3)
 			p = p;
 		else
@@ -414,7 +474,13 @@ int RCGpuKang::Dbg_CheckKangs()
 				p = ec.AddPoints(PntA, p);
 			else
 				p = ec.AddPoints(PntB, p);
-		if (!p.IsEqual(Pnt))
+                if (p.y.data[0] & 1)
+                {
+                        p.y.NegModP();
+                        dist.Neg();
+                        neg = !neg;
+                }
+                if (!p.IsEqual(Pnt))
 			res++;
 	}
 	free(kangs);
@@ -510,8 +576,42 @@ void RCGpuKang::Execute()
 
 int RCGpuKang::GetStatsSpeed()
 {
-	int res = SpeedStats[0];
-	for (int i = 1; i < STATS_WND_SIZE; i++)
-		res += SpeedStats[i];
-	return res / STATS_WND_SIZE;
+        int res = SpeedStats[0];
+        for (int i = 1; i < STATS_WND_SIZE; i++)
+                res += SpeedStats[i];
+        return res / STATS_WND_SIZE;
+}
+
+bool GpuCalcKG(EcPoint& out, const EcInt& k, int cuda_index)
+{
+        TKparams params{};
+        params.BlockCnt = 1;
+        params.BlockSize = 1;
+        params.GroupCnt = PNT_GROUP_CNT;
+        params.KangCnt = PNT_GROUP_CNT;
+        params.IsGenMode = true;
+
+        cudaError_t err = cudaSetDevice(cuda_index);
+        if (err != cudaSuccess)
+                return false;
+
+        err = cudaMallocManaged((void**)&params.Kangs, params.KangCnt * 12 * sizeof(u64));
+        if (err != cudaSuccess)
+                return false;
+        memset(params.Kangs, 0, params.KangCnt * 12 * sizeof(u64));
+        params.Kangs[8] = k.data[0];
+        params.Kangs[9] = k.data[1];
+        params.Kangs[10] = 0;
+
+        CallGpuKernelGen(params);
+        err = cudaDeviceSynchronize();
+        if (err != cudaSuccess)
+        {
+                cudaFree(params.Kangs);
+                return false;
+        }
+        memcpy(out.x.data, &params.Kangs[0], 32);
+        memcpy(out.y.data, &params.Kangs[4], 32);
+        cudaFree(params.Kangs);
+        return true;
 }

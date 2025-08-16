@@ -50,7 +50,7 @@ typedef char i8;
 #define WILD1				1  // Wild kangs1 
 #define WILD2				2  // Wild kangs2
 
-#define GPU_DP_SIZE			48
+#define GPU_DP_SIZE                     64
 #define MAX_DP_CNT			(256 * 1024)
 
 #define JMP_MASK			(JMP_CNT-1)
@@ -87,11 +87,12 @@ struct TKparams
 	u64* LastPnts;
 	u64* LoopTable;
 	u32* dbg_buf;
-	u32* LoopedKangs;
-	bool IsGenMode; //tames generation mode
+        u32* LoopedKangs;
+        bool IsGenMode; //tames generation mode
+        u32  PhiFold;   //endomorphism folding mode: 0=off, 1=phi(P), 2=phi^2(P)
 
-	u32 KernelA_LDS_Size;
-	u32 KernelB_LDS_Size;
-	u32 KernelC_LDS_Size;	
+        u32 KernelA_LDS_Size;
+        u32 KernelB_LDS_Size;
+        u32 KernelC_LDS_Size;
 };
 

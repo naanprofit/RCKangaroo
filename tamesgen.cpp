@@ -54,26 +54,28 @@ int main(int argc, char* argv[])
                 printf("Count exceeds supported limits\n");
                 return 1;
         }
-        TFastBase* db = new TFastBase();
-        db->Header[0] = range;
+        size_t rec_size = 3 + DB_REC_LEN;
+        TamesRecordWriter* wr = TamesRecordWriterOpen(out_file, base128, rec_size, base128 ? 0 : count);
+        if (!wr)
+        {
+                printf("Failed to open output file\n");
+                return 1;
+        }
 
         for (uint64_t i = 0; i < count; i++)
         {
                 u8 data[3 + DB_REC_LEN];
                 for (int j = 0; j < 3 + DB_REC_LEN; j++)
                         data[j] = rand() & 0xFF;
-                db->AddDataBlock(data);
+                if (!TamesRecordWriterWrite(wr, data))
+                {
+                        printf("Write failed\n");
+                        TamesRecordWriterClose(wr);
+                        return 1;
+                }
         }
 
-        bool ok = base128 ? db->SaveToFileBase128(out_file) : db->SaveToFile(out_file);
-        if (ok)
-        {
-                printf("Generated %llu tames to %s\n", (unsigned long long)count, out_file);
-                delete db;
-                return 0;
-        }
-
-        printf("Failed to save tames\n");
-        delete db;
-        return 1;
+        TamesRecordWriterClose(wr);
+        printf("Generated %llu tames to %s\n", (unsigned long long)count, out_file);
+        return 0;
 }

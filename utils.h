@@ -11,6 +11,11 @@
 #include <vector>
 #include "defs.h"
 
+#ifndef DB_REC_LEN
+#define DB_REC_LEN 32
+#endif
+static_assert(DB_REC_LEN == 32, "DB_REC_LEN must remain 32 bytes");
+
 #ifdef _WIN32
 
 	#include <Windows.h>
@@ -70,6 +75,25 @@ struct TListRec
 };
 #pragma pack(pop)
 
+// tames file header
+#define TAMES_MAGIC "PMAP"
+#define TAMES_VERSION 1
+#define TAMES_FLAG_LE 0x0001
+#define TAMES_FLAG_BASE128 0x0002
+#define TAMES_RANGE_SHIFT 8
+
+#pragma pack(push, 1)
+struct TamesHeader
+{
+        char magic[4];
+        u8   version;
+        u8   stride;
+        u16  flags;
+        u64  rec_cnt;
+};
+#pragma pack(pop)
+static_assert(sizeof(TamesHeader) == 16, "TamesHeader size mismatch");
+
 class MemPool
 {
 private:
@@ -101,7 +125,7 @@ private:
         size_t mapped_size;
         bool mapped_mode;
 public:
-        u8 Header[256];
+        TamesHeader Header;
 
         TFastBase();
         ~TFastBase();
@@ -112,12 +136,18 @@ public:
         u64 GetBlockCnt();
         bool LoadFromFile(char* fn);
         bool SaveToFile(char* fn);
-        bool LoadFromFileBase128(char* fn);
-        bool SaveToFileBase128(char* fn);
+        bool LoadFromFileBase128(char* fn); // legacy Base128 support; cannot be memory-mapped and requires full in-memory decoding
+        bool SaveToFileBase128(char* fn);   // legacy Base128 support, prefer binary pmap
         bool OpenMapped(char* fn);
         void CloseMapped();
         u8* FindDataBlockMapped(u8* data);
         bool IsMapped();
 };
+
+// Streaming writer for tames records
+struct TamesRecordWriter;
+TamesRecordWriter* TamesRecordWriterOpen(const char* path, bool base128, size_t rec_size, u64 prealloc_recs = 0);
+bool TamesRecordWriterWrite(TamesRecordWriter* wr, const u8* data);
+void TamesRecordWriterClose(TamesRecordWriter* wr);
 
 bool IsFileExist(char* fn);
