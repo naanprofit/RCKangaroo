@@ -420,12 +420,12 @@ void CheckNewPoints()
                 if (pref_type != TAME)
                 {
                         memcpy(w.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF)
+                        if (pref->d[21] & 0x80)
                                 memset(((u8*)w.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)w.data) + 22, 0, 18);
                         memcpy(t.data, nrec.d, sizeof(nrec.d));
-                        if (nrec.d[21] == 0xFF)
+                        if (nrec.d[21] & 0x80)
                                 memset(((u8*)t.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)t.data) + 22, 0, 18);
@@ -437,12 +437,12 @@ void CheckNewPoints()
                 else
                 {
                         memcpy(w.data, nrec.d, sizeof(nrec.d));
-                        if (nrec.d[21] == 0xFF)
+                        if (nrec.d[21] & 0x80)
                                 memset(((u8*)w.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)w.data) + 22, 0, 18);
                         memcpy(t.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF)
+                        if (pref->d[21] & 0x80)
                                 memset(((u8*)t.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)t.data) + 22, 0, 18);
