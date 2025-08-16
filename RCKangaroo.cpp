@@ -427,17 +427,14 @@ void CheckNewPoints()
                 if (delta == 1) w.MulLambdaN();
                 else if (delta == 2) w.MulLambda2N();
 
-                bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
+                bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) ||
+                            Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
                 if (!res)
                 {
-                        bool w12 = ((pref_type == WILD1) && (nrec_type == WILD2)) || ((pref_type == WILD2) && (nrec_type == WILD1));
-                        if (w12)
-                                ;
-                        else
-                        {
-                                printf("Collision Error\r\n");
+                        bool w12 = ((pref_type == WILD1) && (nrec_type == WILD2)) ||
+                                   ((pref_type == WILD2) && (nrec_type == WILD1));
+                        if (!w12)
                                 gTotalErrors++;
-                        }
                         continue;
                 }
                 gSolved = true;
