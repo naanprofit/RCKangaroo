@@ -40,6 +40,8 @@ Discussion thread: https://bitcointalk.org/index.php?topic=5517607
 
 <b>--glv-jumps N</b>   build jump tables using GLV multiplication when N=1 (default 0). Use 0 to disable GLV during jump generation.
 
+<b>--force-device N</b> force the use of GPU N, bypassing capability checks. Useful for self-tests on older cards.
+
 <b>--multi-dp</b>      allow multiple distinguished-point tables (1 to enable, 0 to disable). Disabling may save memory at the cost of more DP collisions.
 
 <b>--bloom-mbits</b>   size of the Bloom filter in bits, expressed as a power of two. "--bloom-mbits 27" allocates 2^27 bits (~16 MB).

@@ -68,6 +68,7 @@ bool gSelfTest = false; // legacy single self-test
 bool gSelfTestMul = false;
 bool gSelfTestJumps = false;
 bool gGlvJumps = false;
+int gForceDevice = -1;
 int gDpCoarseOffset = 0;
 int gBloomMBits = 24;
 int gBloomK = 3;
@@ -132,8 +133,15 @@ void InitGpus()
 		gcnt = MAX_GPU_CNT;
 
 //	gcnt = 1; //dbg
-	if (!gcnt)
-		return;
+        if (!gcnt)
+                return;
+
+        int start = 0, end = gcnt;
+        if (gForceDevice >= 0 && gForceDevice < gcnt)
+        {
+                start = gForceDevice;
+                end = gForceDevice + 1;
+        }
 
         int drv, rt;
         cudaRuntimeGetVersion(&rt);
@@ -157,17 +165,17 @@ void InitGpus()
         printf("System memory: %.2f GB\n", sys_gb);
 
         cudaError_t cudaStatus;
-        for (int i = 0; i < gcnt; i++)
+        for (int i = start; i < end; i++)
         {
                 cudaStatus = cudaSetDevice(i);
                 if (cudaStatus != cudaSuccess)
                 {
                         printf("cudaSetDevice for gpu %d failed!\r\n", i);
                         continue;
-		}
+                }
 
-		if (!gGPUs_Mask[i])
-			continue;
+                if (gForceDevice < 0 && !gGPUs_Mask[i])
+                        continue;
 
                 cudaDeviceProp deviceProp;
                 cudaGetDeviceProperties(&deviceProp, i);
@@ -175,11 +183,11 @@ void InitGpus()
                 printf("GPU %d: %s, %.2f GB, %d CUs, cap %d.%d, PCI %d, L2 size: %d KB\r\n", i, deviceProp.name, gpu_gb, deviceProp.multiProcessorCount, deviceProp.major, deviceProp.minor, deviceProp.pciBusID, deviceProp.l2CacheSize / 1024);
                 printf("Unified memory (GPU + system): %.2f GB\n", gpu_gb + sys_gb);
 		
-		if (deviceProp.major < 6)
-		{
-			printf("GPU %d - not supported, skip\r\n", i);
-			continue;
-		}
+                if (deviceProp.major < 6 && gForceDevice < 0)
+                {
+                        printf("GPU %d - not supported, skip\r\n", i);
+                        continue;
+                }
 
 		cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
 
@@ -235,13 +243,19 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 		EcInt sv = gPrivKey;
 		gPrivKey.Add(Int_HalfRange);
             EcPoint P = ec.MultiplyG_GLV(gPrivKey);
-		if (P.IsEqual(pnt))
-			return true;
-		gPrivKey = sv;
-		gPrivKey.Neg();
-		gPrivKey.Add(Int_HalfRange);
+                if (P.IsEqual(pnt))
+                        return true;
+            P = ec.MultiplyG(gPrivKey);
+                if (P.IsEqual(pnt))
+                        return true;
+                gPrivKey = sv;
+                gPrivKey.Neg();
+                gPrivKey.Add(Int_HalfRange);
             P = ec.MultiplyG_GLV(gPrivKey);
-		return P.IsEqual(pnt);
+                if (P.IsEqual(pnt))
+                        return true;
+            P = ec.MultiplyG(gPrivKey);
+                return P.IsEqual(pnt);
 	}
 	else
 	{
@@ -253,13 +267,19 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 		EcInt sv = gPrivKey;
 		gPrivKey.Add(Int_HalfRange);
             EcPoint P = ec.MultiplyG_GLV(gPrivKey);
-		if (P.IsEqual(pnt))
-			return true;
-		gPrivKey = sv;
-		gPrivKey.Neg();
-		gPrivKey.Add(Int_HalfRange);
+                if (P.IsEqual(pnt))
+                        return true;
+            P = ec.MultiplyG(gPrivKey);
+                if (P.IsEqual(pnt))
+                        return true;
+                gPrivKey = sv;
+                gPrivKey.Neg();
+                gPrivKey.Add(Int_HalfRange);
             P = ec.MultiplyG_GLV(gPrivKey);
-		return P.IsEqual(pnt);
+                if (P.IsEqual(pnt))
+                        return true;
+            P = ec.MultiplyG(gPrivKey);
+                return P.IsEqual(pnt);
 	}
 }
 
@@ -398,6 +418,12 @@ void CheckNewPoints()
                 }
 
                 int delta = (phi_w - phi_t + 3) % 3;
+                static bool phi_log = false;
+                if (!phi_log)
+                {
+                        printf("phi merge: t=%d w=%d delta=%d\n", phi_t, phi_w, delta);
+                        phi_log = true;
+                }
                 if (delta == 1) w.MulLambdaN();
                 else if (delta == 2) w.MulLambda2N();
 
@@ -811,16 +837,21 @@ bool ParseCommandLine(int argc, char* argv[])
                         if (gPhiFold > 2) gPhiFold = 2;
                         ci++;
                 }
-                else if (strcmp(argument, "--glv-jumps") == 0)
-                {
-                        if (ci >= argc) { printf("error: missed value after --glv-jumps option\r\n"); return false; }
-                        gGlvJumps = atoi(argv[ci]) != 0; ci++;
-                }
-                else if (strcmp(argument, "--multi-dp") == 0)
-                {
-                        if (ci >= argc) { printf("error: missed value after --multi-dp option\r\n"); return false; }
-                        gMultiDP = atoi(argv[ci]) != 0; ci++;
-                }
+               else if (strcmp(argument, "--glv-jumps") == 0)
+               {
+                       if (ci >= argc) { printf("error: missed value after --glv-jumps option\r\n"); return false; }
+                       gGlvJumps = atoi(argv[ci]) != 0; ci++;
+               }
+               else if (strcmp(argument, "--force-device") == 0)
+               {
+                       if (ci >= argc) { printf("error: missed value after --force-device option\r\n"); return false; }
+                       gForceDevice = atoi(argv[ci]); ci++;
+               }
+               else if (strcmp(argument, "--multi-dp") == 0)
+               {
+                       if (ci >= argc) { printf("error: missed value after --multi-dp option\r\n"); return false; }
+                       gMultiDP = atoi(argv[ci]) != 0; ci++;
+               }
                 else if (strcmp(argument, "--dp-coarse-offset") == 0)
                 {
                         if (ci >= argc) { printf("error: missed value after --dp-coarse-offset option\r\n"); return false; }
@@ -907,6 +938,23 @@ static void PrintPoint(const char* name, const EcPoint& p)
 bool SelfTestMul()
 {
         EcInt k;
+        if (!GpuCnt)
+        {
+                for (int i = 0; i < 8; i++)
+                {
+                        k.RndBits(128);
+                        EcPoint p_plain = ec.MultiplyG(k);
+                        EcPoint p_glv = ec.MultiplyG_GLV(k);
+                        if (!p_plain.IsEqual(p_glv))
+                        {
+                                PrintPoint("plain", p_plain);
+                                PrintPoint("glv", p_glv);
+                                return false;
+                        }
+                }
+                printf("CPU-only self-test passed (no GPU)\n");
+                return true;
+        }
         k.RndBits(128);
         EcPoint p_plain = ec.MultiplyG(k);
         EcPoint p_glv = ec.MultiplyG_GLV(k);
@@ -938,6 +986,27 @@ bool SelfTestJumps(int Range)
 {
         SetRndSeed(0);
         BuildJumpTables(Range);
+        if (!GpuCnt)
+        {
+                for (int tbl = 0; tbl < 3; tbl++)
+                {
+                        EcJMP* jumps = tbl == 0 ? EcJumps1 : (tbl == 1 ? EcJumps2 : EcJumps3);
+                        for (int i = 0; i < JMP_CNT; i++)
+                        {
+                                EcPoint p_plain = ec.MultiplyG(jumps[i].dist);
+                                EcPoint p_glv = ec.MultiplyG_GLV(jumps[i].dist);
+                                if (!p_plain.IsEqual(p_glv) || !p_plain.IsEqual(jumps[i].p))
+                                {
+                                        PrintPoint("plain", p_plain);
+                                        PrintPoint("glv", p_glv);
+                                        PrintPoint("tbl", jumps[i].p);
+                                        return false;
+                                }
+                        }
+                }
+                printf("CPU-only self-test passed (no GPU)\n");
+                return true;
+        }
         for (int g = 0; g < GpuCnt; g++)
         {
                 for (int tbl = 0; tbl < 3; tbl++)
@@ -1005,7 +1074,7 @@ int main(int argc, char* argv[])
 
         InitGpus();
 
-        if (!GpuCnt)
+        if (!GpuCnt && !(gSelfTest || gSelfTestMul || gSelfTestJumps))
         {
                 printf("No supported GPUs detected, exit\r\n");
                 return 0;
