@@ -61,7 +61,6 @@ u64 GetTickCount64()
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#define DB_REC_LEN			32
 #define DB_FIND_LEN			9
 #define DB_MIN_GROW_CNT		2
 
@@ -70,7 +69,8 @@ u64 GetTickCount64()
 
 #define MEM_PAGE_SIZE		(128 * 1024)
 #define RECS_IN_PAGE		(MEM_PAGE_SIZE / DB_REC_LEN)
-#define MAX_PAGES_CNT		(0xFFFFFFFF / RECS_IN_PAGE)
+#define MAX_PAGES_CNT           (0xFFFFFFFF / RECS_IN_PAGE)
+static_assert(DB_REC_LEN == 32, "DB_REC_LEN mismatch");
 
 MemPool::MemPool()
 {
