@@ -298,8 +298,12 @@ void CheckNewPoints()
                 memcpy(nrec.x, p, 12);
                 memcpy(nrec.d, p + 32, 22);
                 u8 type_byte = gGenMode ? TAME : p[56];
-                u8 nrec_k = type_byte >> 2;
-                u8 nrec_type = type_byte & 3;
+                u8 nrec_k = (type_byte >> 1) & 3;
+                u8 nrec_type;
+                if ((type_byte & 1) == 0)
+                        nrec_type = TAME;
+                else
+                        nrec_type = (type_byte & 8) ? WILD2 : WILD1;
                 nrec.type = type_byte;
 
                 if (gGenMode)
@@ -347,8 +351,12 @@ void CheckNewPoints()
                 memcpy(&tmp_pref, &nrec, 3);
                 memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
                 pref = &tmp_pref;
-                u8 pref_k = pref->type >> 2;
-                u8 pref_type = pref->type & 3;
+                u8 pref_k = (pref->type >> 1) & 3;
+                u8 pref_type;
+                if ((pref->type & 1) == 0)
+                        pref_type = TAME;
+                else
+                        pref_type = (pref->type & 8) ? WILD2 : WILD1;
 
                 if ((pref_type == nrec_type) && (pref_k == nrec_k))
                 {

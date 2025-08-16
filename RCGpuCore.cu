@@ -555,11 +555,18 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
         u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
         *(int4*)&DPs[0] = ((int4*)x_can)[0];
         *(int4*)&DPs[4] = ((int4*)x_can)[1];
-        *(int4*)&DPs[8] = ((int4*)d)[0];
-        *(u32*)&DPs[12] = (u32)d[2];
-        *(u16*)&DPs[13] = (u16)(d[2] >> 32);
-        *((u16*)&DPs[13] + 1) = 0; // zero padding to keep 22-byte distance
-        DPs[14] = (k << 2) | (3 * kang_ind / Kparams.KangCnt); //kang type + phi k
+
+        u8* dpb = (u8*)DPs;
+#pragma unroll
+        for (int i = 0; i < 22; ++i)
+                dpb[32 + i] = ((u8*)d)[i];
+        dpb[54] = dpb[55] = 0;
+
+        int type = 3 * kang_ind / Kparams.KangCnt;
+        u8 type_byte = (k << 1) | (type ? 1 : 0);
+        if (type == WILD2)
+                type_byte |= 0x8;
+        dpb[56] = type_byte;
 }
 
 __device__ __forceinline__ bool ProcessJumpDistance(u32 step_ind, u32 d_cur, u64* d, u32 kang_ind, u64* jmp1_d, u64* jmp2_d, const TKparams& Kparams, u64* table, u32* cur_ind, u8 iter)
