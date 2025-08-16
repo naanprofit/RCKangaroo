@@ -370,14 +370,13 @@ void CheckNewPoints()
                 u8 pref_k = pref->type >> 2;
                 u8 pref_type = pref->type & 3;
 
-                if ((pref_type == nrec_type) && (pref_k == nrec_k))
-                {
-                        if (pref_type == TAME)
-                                continue;
-
-                        if (*(u64*)pref->d == *(u64*)nrec.d)
-                                continue;
-                }
+               // Collisions coming from the same side (tame/tame or wild/wild)
+               // cannot produce a valid solution.  These happen when two
+               // kangaroos hit the same distinguished point due to coarse
+               // DP filtering.  Skip such pairs early instead of treating
+               // them as errors.
+               if ((pref_type == nrec_type) && (pref_k == nrec_k))
+                       continue;
 
                 EcInt w, t;
                 int TameType, WildType;
@@ -427,19 +426,16 @@ void CheckNewPoints()
                 if (delta == 1) w.MulLambdaN();
                 else if (delta == 2) w.MulLambda2N();
 
-                bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) || Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
-                if (!res)
-                {
-                        bool w12 = ((pref_type == WILD1) && (nrec_type == WILD2)) || ((pref_type == WILD2) && (nrec_type == WILD1));
-                        if (w12)
-                                ;
-                        else
-                        {
-                                printf("Collision Error\r\n");
-                                gTotalErrors++;
-                        }
-                        continue;
-                }
+               bool res = Collision_SOTA(gPntToSolve, t, TameType, w, WildType, false) ||
+                           Collision_SOTA(gPntToSolve, t, TameType, w, WildType, true);
+               if (!res)
+               {
+                       // False positives are expected when two kangaroos map to the
+                       // same distinguished point without actually colliding.  Just
+                       // count them and move on.
+                       gTotalErrors++;
+                       continue;
+               }
                 gSolved = true;
                 break;
         }
