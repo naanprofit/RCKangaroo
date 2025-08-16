@@ -248,13 +248,15 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
         {
                 EcInt beta2 = g_Beta;
                 beta2.MulModP(g_Beta);
-                if ((err = cudaMemcpyToSymbol(BETA, g_Beta.data, sizeof(g_Beta.data))) != cudaSuccess)
+                // g_Beta.data has 5 limbs (40 bytes), but the GPU constant expects 4 limbs (32 bytes)
+                // copy only the lower 256 bits
+                if ((err = cudaMemcpyToSymbol(BETA, g_Beta.data, 4 * sizeof(u64))) != cudaSuccess)
                 {
                         free(jmp2_table);
                         printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
                         return false;
                 }
-                if ((err = cudaMemcpyToSymbol(BETA2, beta2.data, sizeof(beta2.data))) != cudaSuccess)
+                if ((err = cudaMemcpyToSymbol(BETA2, beta2.data, 4 * sizeof(u64))) != cudaSuccess)
                 {
                         free(jmp2_table);
                         printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
