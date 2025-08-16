@@ -365,9 +365,15 @@ void CheckNewPoints()
                 if (pref_type != TAME)
                 {
                         memcpy(w.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+                        if (pref->d[21] == 0xFF)
+                                memset(((u8*)w.data) + 22, 0xFF, 18);
+                        else
+                                memset(((u8*)w.data) + 22, 0, 18);
                         memcpy(t.data, nrec.d, sizeof(nrec.d));
-                        if (nrec.d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+                        if (nrec.d[21] == 0xFF)
+                                memset(((u8*)t.data) + 22, 0xFF, 18);
+                        else
+                                memset(((u8*)t.data) + 22, 0, 18);
                         TameType = nrec_type;
                         WildType = pref_type;
                         phi_t = nrec_k;
@@ -376,9 +382,15 @@ void CheckNewPoints()
                 else
                 {
                         memcpy(w.data, nrec.d, sizeof(nrec.d));
-                        if (nrec.d[21] == 0xFF) memset(((u8*)w.data) + 22, 0xFF, 18);
+                        if (nrec.d[21] == 0xFF)
+                                memset(((u8*)w.data) + 22, 0xFF, 18);
+                        else
+                                memset(((u8*)w.data) + 22, 0, 18);
                         memcpy(t.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF) memset(((u8*)t.data) + 22, 0xFF, 18);
+                        if (pref->d[21] == 0xFF)
+                                memset(((u8*)t.data) + 22, 0xFF, 18);
+                        else
+                                memset(((u8*)t.data) + 22, 0, 18);
                         TameType = TAME;
                         WildType = nrec_type;
                         phi_t = pref_k;

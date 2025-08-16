@@ -555,10 +555,13 @@ __device__ __forceinline__ void BuildDP(const TKparams& Kparams, int kang_ind, u
         u32* DPs = Kparams.DPs_out + 4 + pos * GPU_DP_SIZE / 4;
         *(int4*)&DPs[0] = ((int4*)x_can)[0];
         *(int4*)&DPs[4] = ((int4*)x_can)[1];
-        *(int4*)&DPs[8] = ((int4*)d)[0];
-        *(u32*)&DPs[12] = (u32)d[2];
-        *(u16*)&DPs[13] = (u16)(d[2] >> 32);
-        *((u16*)&DPs[13] + 1) = 0; // zero padding to keep 22-byte distance
+        u8* dp8 = (u8*)DPs;
+        u8* d8 = (u8*)d;
+#pragma unroll
+        for (int i = 0; i < 22; i++)
+                dp8[32 + i] = d8[i];
+        dp8[54] = 0;
+        dp8[55] = 0;
         DPs[14] = (k << 2) | (3 * kang_ind / Kparams.KangCnt); //kang type + phi k
 }
 
