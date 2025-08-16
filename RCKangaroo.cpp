@@ -41,6 +41,7 @@ CriticalSection csAddPoints;
 u8* pPntList;
 u8* pPntList2;
 volatile int PntIndex;
+int MaxCntList;
 TFastBase db;
 EcPoint gPntToSolve;
 EcInt gPrivKey;
@@ -219,13 +220,13 @@ void* kang_thr_proc(void* data)
 #endif
 void AddPointsToList(u32* data, int pnt_cnt, u64 ops_cnt)
 {
-	csAddPoints.Enter();
-	if (PntIndex + pnt_cnt >= MAX_CNT_LIST)
-	{
-		csAddPoints.Leave();
-		printf("DPs buffer overflow, some points lost, increase DP value!\r\n");
-		return;
-	}
+        csAddPoints.Enter();
+        if (PntIndex + pnt_cnt >= MaxCntList)
+        {
+                csAddPoints.Leave();
+                printf("DPs buffer overflow, some points lost, increase DP value!\r\n");
+                return;
+        }
 	memcpy(pPntList + GPU_DP_SIZE * PntIndex, data, pnt_cnt * GPU_DP_SIZE);
 	PntIndex += pnt_cnt;
 	PntTotalOps += ops_cnt;
@@ -1114,8 +1115,9 @@ int main(int argc, char* argv[])
                 return 0;
         }
 
-        cudaMallocManaged((void**)&pPntList, MAX_CNT_LIST * GPU_DP_SIZE);
-        cudaMallocManaged((void**)&pPntList2, MAX_CNT_LIST * GPU_DP_SIZE);
+        MaxCntList = MAX_DP_CNT * (GpuCnt ? GpuCnt : 1);
+        cudaMallocManaged((void**)&pPntList, (size_t)MaxCntList * GPU_DP_SIZE);
+        cudaMallocManaged((void**)&pPntList2, (size_t)MaxCntList * GPU_DP_SIZE);
         TotalOps = 0;
         TotalSolved = 0;
         gTotalErrors = 0;
