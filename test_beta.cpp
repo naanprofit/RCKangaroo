@@ -2,6 +2,7 @@
 #include "Ec.h"
 #include <cassert>
 #include <boost/multiprecision/cpp_int.hpp>
+#include <cstdio>
 
 int main() {
     InitEc();
@@ -20,5 +21,6 @@ int main() {
     cpp_int beta3 = (beta * beta % P) * beta % P;
     assert(beta3 == 1);
     assert(beta != 1);
+    printf("test_beta: pass\n");
     return 0;
 }

@@ -2,6 +2,7 @@
 #include "RCGpuUtils.h"
 #include <cuda_runtime.h>
 #include <string.h>
+#include <stdio.h>
 
 __device__ __forceinline__ void AddPoints(u64* res_x, u64* res_y, u64* p1x, u64* p1y, u64* p2x, u64* p2y) {
     __align__(16) u64 tmp[4], tmp2[4], lambda[4], lambda2[4];
@@ -23,7 +24,11 @@ __global__ void kernel_add(u64* out, u64* p1, u64* p2) {
 }
 
 int main() {
-    if (cudaSetDevice(0) != cudaSuccess) return 1;
+    if (cudaSetDevice(0) != cudaSuccess) {
+        printf("no gpu\n");
+        return 1;
+    }
+    InitEc();
     SetRndSeed(3);
     for (int i = 0; i < 4; i++) {
         EcInt k1, k2; k1.RndBits(128); k2.RndBits(128);
@@ -48,7 +53,11 @@ int main() {
         EcPoint gpu;
         memcpy(gpu.x.data, out, 32);
         memcpy(gpu.y.data, out + 4, 32);
-        if (!gpu.IsEqual(cpu)) return 1;
+        if (!gpu.IsEqual(cpu)) {
+            printf("mismatch at %d\n", i);
+            return 1;
+        }
     }
+    printf("test_add_gpu: pass\n");
     return 0;
 }

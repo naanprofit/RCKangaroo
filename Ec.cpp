@@ -279,16 +279,23 @@ EcPoint Ec::MultiplyG_GLV(EcInt& k)
         cpp_int K = to_cpp(k);
         cpp_int c1 = (K * g1 + (cpp_int(1) << 383)) >> 384;
         cpp_int c2 = (K * g2 + (cpp_int(1) << 383)) >> 384;
-        cpp_int r2 = (c1 * minus_b1 + c2 * minus_b2) % order;
-        if (r2 < 0) r2 += order;
-        cpp_int r1 = (K - r2 * lambda) % order;
-        if (r1 < 0) r1 += order;
+        cpp_int r2 = c1 * minus_b1 + c2 * minus_b2;
+        cpp_int r1 = K - r2 * lambda;
+
+        bool neg1 = r1 < 0;
+        bool neg2 = r2 < 0;
+        if (neg1) r1 = -r1;
+        if (neg2) r2 = -r2;
+        r1 %= order;
+        r2 %= order;
 
         EcInt k1 = from_cpp(r1);
         EcInt k2 = from_cpp(r2);
 
         EcPoint p1 = MultiplyG(k1);
+        if (neg1 && !p1.y.IsZero()) p1.y.NegModP();
         EcPoint p2 = MultiplyG(k2);
+        if (neg2 && !p2.y.IsZero()) p2.y.NegModP();
         p2.x.MulModP(g_Beta);
 
         return AddPoints(p1, p2);

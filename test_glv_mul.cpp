@@ -12,5 +12,6 @@ int main() {
             return 1;
         }
     }
+    printf("test_glv_mul: pass\n");
     return 0;
 }
