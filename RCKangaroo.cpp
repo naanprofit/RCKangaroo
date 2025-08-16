@@ -40,7 +40,8 @@ Ec ec;
 CriticalSection csAddPoints;
 u8* pPntList;
 u8* pPntList2;
-volatile int PntIndex;
+volatile u32 PntIndex;
+u32 gMaxCntList;
 TFastBase db;
 EcPoint gPntToSolve;
 EcInt gPrivKey;
@@ -219,17 +220,17 @@ void* kang_thr_proc(void* data)
 #endif
 void AddPointsToList(u32* data, int pnt_cnt, u64 ops_cnt)
 {
-	csAddPoints.Enter();
-	if (PntIndex + pnt_cnt >= MAX_CNT_LIST)
-	{
-		csAddPoints.Leave();
-		printf("DPs buffer overflow, some points lost, increase DP value!\r\n");
-		return;
-	}
-	memcpy(pPntList + GPU_DP_SIZE * PntIndex, data, pnt_cnt * GPU_DP_SIZE);
-	PntIndex += pnt_cnt;
-	PntTotalOps += ops_cnt;
-	csAddPoints.Leave();
+    csAddPoints.Enter();
+    if (PntIndex + (u32)pnt_cnt >= gMaxCntList)
+    {
+            csAddPoints.Leave();
+            printf("DPs buffer overflow, some points lost, increase DP value!\r\n");
+            return;
+    }
+    memcpy(pPntList + GPU_DP_SIZE * PntIndex, data, pnt_cnt * GPU_DP_SIZE);
+    PntIndex += pnt_cnt;
+    PntTotalOps += ops_cnt;
+    csAddPoints.Leave();
 }
 
 bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, bool IsNeg)
@@ -1069,10 +1070,11 @@ int main(int argc, char* argv[])
         if (gMultiDP)
                 gBloom.Init(gBloomMBits, gBloomK);
 
-        InitGpus();
+    InitGpus();
+    gMaxCntList = (u32)(MAX_DP_CNT * (GpuCnt ? GpuCnt : 1) * 2);
 
-        if (!GpuCnt && !(gSelfTest || gSelfTestMul || gSelfTestJumps))
-        {
+    if (!GpuCnt && !(gSelfTest || gSelfTestMul || gSelfTestJumps))
+    {
                 printf("No supported GPUs detected, exit\r\n");
                 return 0;
         }
@@ -1114,9 +1116,9 @@ int main(int argc, char* argv[])
                 return 0;
         }
 
-        cudaMallocManaged((void**)&pPntList, MAX_CNT_LIST * GPU_DP_SIZE);
-        cudaMallocManaged((void**)&pPntList2, MAX_CNT_LIST * GPU_DP_SIZE);
-        TotalOps = 0;
+    cudaMallocManaged((void**)&pPntList, (size_t)gMaxCntList * GPU_DP_SIZE);
+    cudaMallocManaged((void**)&pPntList2, (size_t)gMaxCntList * GPU_DP_SIZE);
+    TotalOps = 0;
         TotalSolved = 0;
         gTotalErrors = 0;
         IsBench = gPubKey.x.IsZero();
