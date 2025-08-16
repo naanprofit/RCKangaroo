@@ -443,6 +443,13 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
         double path_single_kang = ops / total_kangs;
         double DPs_per_kang = path_single_kang / dp_val;
         printf("Estimated DPs per kangaroo: %.3f.%s\r\n", DPs_per_kang, (DPs_per_kang < 5) ? " DP overhead is big, use less DP value if possible!" : "");
+        if (MaxTotalOps > 0.0)
+        {
+                double limit_path_per_kang = MaxTotalOps / total_kangs;
+                double limit_DPs_per_kang = limit_path_per_kang / dp_val;
+                if (limit_DPs_per_kang < 5)
+                        printf("WARNING: gMax is too small for current range and DP; only %.3f DPs per kangaroo allowed\r\n", limit_DPs_per_kang);
+        }
 
        bool tamesRangeMismatch = false;
        if (!gGenMode && gTamesFileName[0])
@@ -507,10 +514,12 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                }
                else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
                {
-                       printf("loaded tames have different range, they cannot be used, clear\r\n");
+                       u32 fileRange = db.Header.flags >> TAMES_RANGE_SHIFT;
+                       printf("WARNING: tames cleared after %llu/%.0f ops. Reason: range mismatch (file:%u expected:%u)\r\n",
+                               PntTotalOps, MaxTotalOps, fileRange, gRange);
                        db.Clear();
                        tamesRangeMismatch = true;
-                       printf("WARNING: tames cleared due to range mismatch, continuing without precomputed tames\r\n");
+                       printf("Continuing without precomputed tames\r\n");
                }
                else
                        printf("tames loaded\r\n");
@@ -652,23 +661,24 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
         if (gIsOpsLimit)
         {
                 printf("Operations limit reached: %llu/%.0f ops. Reason: %s. Search aborted before finding the key\r\n", PntTotalOps, MaxTotalOps, gOpsLimitReason);
-                if (gGenMode)
-                {
-                        printf("saving tames...\r\n");
+               if (gGenMode)
+               {
+                       printf("saving tames...\r\n");
                        db.Header.flags = (u16)(TAMES_FLAG_LE | (gRange << TAMES_RANGE_SHIFT) | (gTamesBase128 ? TAMES_FLAG_BASE128 : 0));
                        bool ok;
                        if (gTamesBase128)
                                ok = db.SaveToFileBase128(gTamesFileName);
                        else
-                                ok = db.SaveToFile(gTamesFileName);
-                        if (ok)
-                                printf("tames saved\r\n");
-                        else
-                                printf("tames saving failed\r\n");
-                }
-                db.Clear();
-                return false;
-        }
+                               ok = db.SaveToFile(gTamesFileName);
+                       if (ok)
+                               printf("tames saved\r\n");
+                       else
+                               printf("tames saving failed\r\n");
+               }
+               printf("Clearing tames database after %llu/%.0f ops. Reason: %s\r\n", PntTotalOps, MaxTotalOps, gOpsLimitReason);
+               db.Clear();
+               return false;
+       }
 
 	double K = (double)PntTotalOps / pow(2.0, Range / 2.0);
 	printf("Point solved, K: %.3f (with DP and GPU overheads)\r\n\r\n", K);
