@@ -119,11 +119,23 @@ void BuildJumpTables(int Range)
 #pragma pack(push, 1)
 struct DBRec
 {
-	u8 x[12];
-	u8 d[22];
-	u8 type; //0 - tame, 1 - wild1, 2 - wild2
+        u8 x[12];
+        u8 d[22];
+        u8 type; //0 - tame, 1 - wild1, 2 - wild2
 };
 #pragma pack(pop)
+
+#pragma pack(push,1)
+// 32-byte on-disk/in-memory compact key stored in TFastBase (x_tail[9] + d[22] + type[1])
+struct DBKey32 {
+    u8 x_tail[9];
+    u8 d[22];
+    u8 type;
+};
+#pragma pack(pop)
+
+static_assert(sizeof(DBRec) == 35, "DBRec must be 35 bytes (12 x + 22 d + 1 type)");
+static_assert(sizeof(DBKey32) == 32, "DBKey32 must be exactly 32 bytes (matches TFastBase stride)");
 
 void InitGpus()
 {
@@ -364,13 +376,13 @@ void CheckNewPoints()
                         continue;
                 }
 
-                DBRec* pref = NULL;
+                DBKey32* pref = NULL;
                 if (!gMultiDP)
                 {
                         if (db.IsMapped())
-                                pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                                pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
                         else
-                                pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
+                                pref = (DBKey32*)db.FindOrAddDataBlock((u8*)&nrec);
                         if (!pref)
                                 continue;
                 }
@@ -379,10 +391,10 @@ void CheckNewPoints()
                         if (bloom_hit)
                         {
                                 if (db.IsMapped())
-                                        pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                                        pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
                                 else
                                 {
-                                        pref = (DBRec*)db.FindDataBlock((u8*)&nrec);
+                                        pref = (DBKey32*)db.FindDataBlock((u8*)&nrec);
                                         if (!pref)
                                         {
                                                 db.AddDataBlock((u8*)&nrec);
@@ -401,16 +413,16 @@ void CheckNewPoints()
                 DBRec tmp_pref;
                 memcpy(&tmp_pref, &nrec, 3);
                 memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
-                pref = &tmp_pref;
-                u8 pref_k = pref->type >> 2;
-                u8 pref_type = pref->type & 3;
+                DBRec* pref_rec = &tmp_pref;
+                u8 pref_k = pref_rec->type >> 2;
+                u8 pref_type = pref_rec->type & 3;
 
                 if ((pref_type == nrec_type) && (pref_k == nrec_k))
                 {
                         if (pref_type == TAME)
                                 continue;
 
-                        if (*(u64*)pref->d == *(u64*)nrec.d)
+                        if (*(u64*)pref_rec->d == *(u64*)nrec.d)
                                 continue;
                 }
 
@@ -419,8 +431,8 @@ void CheckNewPoints()
                 int phi_t, phi_w;
                 if (pref_type != TAME)
                 {
-                        memcpy(w.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF)
+                        memcpy(w.data, pref_rec->d, sizeof(pref_rec->d));
+                        if (pref_rec->d[21] == 0xFF)
                                 memset(((u8*)w.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)w.data) + 22, 0, 18);
@@ -441,8 +453,8 @@ void CheckNewPoints()
                                 memset(((u8*)w.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)w.data) + 22, 0, 18);
-                        memcpy(t.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF)
+                        memcpy(t.data, pref_rec->d, sizeof(pref_rec->d));
+                        if (pref_rec->d[21] == 0xFF)
                                 memset(((u8*)t.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)t.data) + 22, 0, 18);
