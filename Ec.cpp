@@ -147,8 +147,14 @@ void DeInitEc()
 // https://en.wikipedia.org/wiki/Elliptic_curve_point_multiplication#Point_addition
 EcPoint Ec::AddPoints(EcPoint& pnt1, EcPoint& pnt2)
 {
-	EcPoint res;
-	EcInt dx, dy, lambda, lambda2;
+        EcPoint res;
+        EcInt dx, dy, lambda, lambda2;
+
+        // Handle addition with the point at infinity represented as (0,0).
+        if (pnt1.x.IsZero() && pnt1.y.IsZero())
+                return pnt2;
+        if (pnt2.x.IsZero() && pnt2.y.IsZero())
+                return pnt1;
 
 	dx = pnt2.x;
 	dx.SubModP(pnt1.x);
@@ -243,6 +249,9 @@ EcPoint Ec::MultiplyG_GLV(EcInt& k)
         static const cpp_int lambda("0x5363AD4CC05C30E0A5261C028812645A122E22EA20816678DF02967C1B23BD72");
         static const cpp_int g1("0x3086D221A7D46BCDE86C90E49284EB153DAA8A1471E8CA7FE893209A45DBB031");
         static const cpp_int g2("0xE4437ED6010E88286F547FA90ABFE4C4221208AC9DF506C61571B4AE8AC47F71");
+        // Precomputed constants from the secp256k1 endomorphism lattice.
+        // `minus_b1` is actually the second basis vector b2, while `minus_b2`
+        // is -b1 mod n. These names are kept for backward compatibility.
         static const cpp_int minus_b1("0xE4437ED6010E88286F547FA90ABFE4C3");
         static const cpp_int minus_b2("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE8A280AC50774346DD765CDA83DB1562C");
 
