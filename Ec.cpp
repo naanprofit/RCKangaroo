@@ -278,9 +278,27 @@ EcPoint Ec::MultiplyG_GLV(EcInt& k)
         EcInt k1 = from_cpp(r1);
         EcInt k2 = from_cpp(r2);
 
-        EcPoint p1 = MultiplyG(k1);
-        EcPoint p2 = MultiplyG(k2);
-        p2.x.MulModP(g_Beta);
+        bool zero1 = k1.IsZero();
+        bool zero2 = k2.IsZero();
+        if (zero1 && zero2)
+        {
+                EcPoint pnt;
+                return pnt;
+        }
+
+        EcPoint p1, p2;
+        if (!zero1)
+                p1 = MultiplyG(k1);
+        if (!zero2)
+        {
+                p2 = MultiplyG(k2);
+                p2.x.MulModP(g_Beta);
+        }
+
+        if (zero1)
+                return p2;
+        if (zero2)
+                return p1;
 
         return AddPoints(p1, p2);
 }
