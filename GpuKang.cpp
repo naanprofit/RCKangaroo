@@ -246,15 +246,13 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
         {
                 EcInt beta2 = g_Beta;
                 beta2.MulModP(g_Beta);
-                err = cudaMemcpyToSymbol(BETA, g_Beta.data, 32);
-                if (err != cudaSuccess)
+                if ((err = cudaMemcpyToSymbol(BETA, g_Beta.data, sizeof(g_Beta.data))) != cudaSuccess)
                 {
                         free(jmp2_table);
                         printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
                         return false;
                 }
-                err = cudaMemcpyToSymbol(BETA2, beta2.data, 32);
-                if (err != cudaSuccess)
+                if ((err = cudaMemcpyToSymbol(BETA2, beta2.data, sizeof(beta2.data))) != cudaSuccess)
                 {
                         free(jmp2_table);
                         printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
@@ -264,15 +262,13 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
         else
         {
                 u64 zero[4] = { 0, 0, 0, 0 };
-                err = cudaMemcpyToSymbol(BETA, zero, 32);
-                if (err != cudaSuccess)
+                if ((err = cudaMemcpyToSymbol(BETA, zero, sizeof(zero))) != cudaSuccess)
                 {
                         free(jmp2_table);
                         printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
                         return false;
                 }
-                err = cudaMemcpyToSymbol(BETA2, zero, 32);
-                if (err != cudaSuccess)
+                if ((err = cudaMemcpyToSymbol(BETA2, zero, sizeof(zero))) != cudaSuccess)
                 {
                         free(jmp2_table);
                         printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));

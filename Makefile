@@ -28,7 +28,7 @@ $(TARGET): $(CPP_OBJECTS) $(CU_OBJECTS) $(GPU_CPP_OBJECTS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 GpuKang.o: GpuKang.cpp
-	$(NVCC) $(NVCCFLAGS) -c $< -o $@
+	$(NVCC) $(NVCCFLAGS) -x cu -c $< -o $@
 
 
 clean:
