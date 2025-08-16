@@ -892,7 +892,6 @@ int main(int argc, char* argv[])
         gRange = 0;
         gStartSet = false;
         gTamesFileName[0] = 0;
-        gTamesBase128 = false;
         gMax = 0.0;
         gGenMode = false;
         gIsOpsLimit = false;
