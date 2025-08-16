@@ -23,6 +23,27 @@ extern __device__ __constant__ u64 BETA[4];
 extern __device__ __constant__ u64 BETA2[4];
 }
 
+#define CUDA_CHECK(call)                                                     \
+    do {                                                                    \
+        cudaError_t err = call;                                             \
+        if (err != cudaSuccess) {                                           \
+            printf("GPU %d, %s failed: %s\n", CudaIndex, #call,            \
+                   cudaGetErrorString(err));                               \
+            return false;                                                   \
+        }                                                                   \
+    } while (0)
+
+#define CUDA_CHECK_FREE(call)                                                \
+    do {                                                                    \
+        cudaError_t err = call;                                             \
+        if (err != cudaSuccess) {                                           \
+            free(jmp2_table);                                               \
+            printf("GPU %d, %s failed: %s\n", CudaIndex, #call,            \
+                   cudaGetErrorString(err));                               \
+            return false;                                                   \
+        }                                                                   \
+    } while (0)
+
 int RCGpuKang::CalcKangCnt()
 {
 	Kparams.BlockCnt = mpCnt;
@@ -248,34 +269,14 @@ bool RCGpuKang::Prepare(EcPoint _PntToSolve, int _Range, int _DP, EcJMP* _EcJump
         {
                 EcInt beta2 = g_Beta;
                 beta2.MulModP(g_Beta);
-                if ((err = cudaMemcpyToSymbol(BETA, g_Beta.data, sizeof(u64) * 4)) != cudaSuccess)
-                {
-                        free(jmp2_table);
-                        printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
-                        return false;
-                }
-                if ((err = cudaMemcpyToSymbol(BETA2, beta2.data, sizeof(u64) * 4)) != cudaSuccess)
-                {
-                        free(jmp2_table);
-                        printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
-                        return false;
-                }
+                CUDA_CHECK_FREE(cudaMemcpyToSymbol(BETA, g_Beta.data, 32));
+                CUDA_CHECK_FREE(cudaMemcpyToSymbol(BETA2, beta2.data, 32));
         }
         else
         {
                 u64 zero[4] = { 0, 0, 0, 0 };
-                if ((err = cudaMemcpyToSymbol(BETA, zero, sizeof(zero))) != cudaSuccess)
-                {
-                        free(jmp2_table);
-                        printf("GPU %d, cudaMemcpyToSymbol BETA failed: %s\n", CudaIndex, cudaGetErrorString(err));
-                        return false;
-                }
-                if ((err = cudaMemcpyToSymbol(BETA2, zero, sizeof(zero))) != cudaSuccess)
-                {
-                        free(jmp2_table);
-                        printf("GPU %d, cudaMemcpyToSymbol BETA2 failed: %s\n", CudaIndex, cudaGetErrorString(err));
-                        return false;
-                }
+                CUDA_CHECK_FREE(cudaMemcpyToSymbol(BETA, zero, 32));
+                CUDA_CHECK_FREE(cudaMemcpyToSymbol(BETA2, zero, 32));
         }
         free(jmp2_table);
 //jmp3
