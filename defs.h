@@ -57,7 +57,9 @@ typedef char i8;
 
 #define DPTABLE_MAX_CNT		16
 
-#define MAX_CNT_LIST		(512 * 1024)
+// Initial capacity for distinguished point buffers. The buffers may grow
+// dynamically at runtime when the number of collected points exceeds this value.
+#define INIT_CNT_LIST           (512 * 1024)
 
 #define DP_FLAG				0x8000
 #define INV_FLAG			0x4000

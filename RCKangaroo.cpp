@@ -40,6 +40,7 @@ Ec ec;
 CriticalSection csAddPoints;
 u8* pPntList;
 u8* pPntList2;
+size_t PntListCapacity = INIT_CNT_LIST;
 volatile int PntIndex;
 TFastBase db;
 EcPoint gPntToSolve;
@@ -217,19 +218,53 @@ void* kang_thr_proc(void* data)
 	return 0;
 }
 #endif
+
+// Ensure that the distinguished point buffers have enough capacity for the
+// incoming points. The buffers grow by doubling when required. Returns false
+// if memory allocation fails.
+static bool EnsurePointCapacity(int additional)
+{
+        if ((size_t)(PntIndex + additional) < PntListCapacity)
+                return true;
+
+        size_t newCap = PntListCapacity;
+        while ((size_t)(PntIndex + additional) >= newCap)
+                newCap *= 2;
+
+        u8* newList = NULL;
+        u8* newList2 = NULL;
+        cudaError_t err1 = cudaMallocManaged((void**)&newList, newCap * GPU_DP_SIZE);
+        cudaError_t err2 = cudaMallocManaged((void**)&newList2, newCap * GPU_DP_SIZE);
+        if (err1 != cudaSuccess || err2 != cudaSuccess)
+        {
+                printf("DPs buffer overflow, some points lost, increase DP value!\r\n");
+                if (newList) cudaFree(newList);
+                if (newList2) cudaFree(newList2);
+                return false;
+        }
+        memcpy(newList, pPntList, PntIndex * GPU_DP_SIZE);
+        memcpy(newList2, pPntList2, PntIndex * GPU_DP_SIZE);
+        cudaFree(pPntList);
+        cudaFree(pPntList2);
+        pPntList = newList;
+        pPntList2 = newList2;
+        PntListCapacity = newCap;
+        printf("DP buffer grown to %zu entries\r\n", PntListCapacity);
+        return true;
+}
+
 void AddPointsToList(u32* data, int pnt_cnt, u64 ops_cnt)
 {
-	csAddPoints.Enter();
-	if (PntIndex + pnt_cnt >= MAX_CNT_LIST)
-	{
-		csAddPoints.Leave();
-		printf("DPs buffer overflow, some points lost, increase DP value!\r\n");
-		return;
-	}
-	memcpy(pPntList + GPU_DP_SIZE * PntIndex, data, pnt_cnt * GPU_DP_SIZE);
-	PntIndex += pnt_cnt;
-	PntTotalOps += ops_cnt;
-	csAddPoints.Leave();
+        csAddPoints.Enter();
+        if (!EnsurePointCapacity(pnt_cnt))
+        {
+                csAddPoints.Leave();
+                return;
+        }
+        memcpy(pPntList + GPU_DP_SIZE * PntIndex, data, pnt_cnt * GPU_DP_SIZE);
+        PntIndex += pnt_cnt;
+        PntTotalOps += ops_cnt;
+        csAddPoints.Leave();
 }
 
 bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, bool IsNeg)
@@ -1114,8 +1149,8 @@ int main(int argc, char* argv[])
                 return 0;
         }
 
-        cudaMallocManaged((void**)&pPntList, MAX_CNT_LIST * GPU_DP_SIZE);
-        cudaMallocManaged((void**)&pPntList2, MAX_CNT_LIST * GPU_DP_SIZE);
+        cudaMallocManaged((void**)&pPntList, PntListCapacity * GPU_DP_SIZE);
+        cudaMallocManaged((void**)&pPntList2, PntListCapacity * GPU_DP_SIZE);
         TotalOps = 0;
         TotalSolved = 0;
         gTotalErrors = 0;
