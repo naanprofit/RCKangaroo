@@ -64,12 +64,15 @@ bool gIsOpsLimit;
 const char* gOpsLimitReason = "";
 bool gTamesBase128; // legacy Base128 tames format
 bool gMultiDP = true;
+bool gSelfTest = false;
 int gDpCoarseOffset = 0;
 int gBloomMBits = 24;
 int gBloomK = 3;
 int gPhiFold = 1; //phi folding mode
 BloomFilter gBloom;
 TamesRecordWriter* gTamesWriter = NULL;
+
+bool GpuCalcKG(EcPoint& out, const EcInt& k, int cuda_index);
 
 #pragma pack(push, 1)
 struct DBRec
@@ -811,6 +814,10 @@ bool ParseCommandLine(int argc, char* argv[])
                         if (ci >= argc) { printf("error: missed value after --bloom-k option\r\n"); return false; }
                         gBloomK = atoi(argv[ci]); ci++;
                 }
+                else if (strcmp(argument, "--self-test") == 0)
+                {
+                        gSelfTest = true;
+                }
                 else
                 {
                         printf("error: unknown option %s\r\n", argument);
@@ -833,6 +840,28 @@ bool ParseCommandLine(int argc, char* argv[])
 		gGenMode = true;
 	}
 	return true;
+}
+
+bool RunSelfTest()
+{
+        EcInt k;
+        k.RndBits(128);
+        EcPoint p_cpu = ec.MultiplyG_GLV(k);
+        for (int i = 0; i < GpuCnt; i++)
+        {
+                EcPoint p_gpu;
+                if (!GpuCalcKG(p_gpu, k, GpuKangs[i]->CudaIndex))
+                {
+                        printf("Self-test failed: GPU %d kernel error\n", GpuKangs[i]->CudaIndex);
+                        return false;
+                }
+                if (!p_gpu.IsEqual(p_cpu))
+                {
+                        printf("Self-test failed: CPU/GPU mismatch on GPU %d\n", GpuKangs[i]->CudaIndex);
+                        return false;
+                }
+        }
+        return true;
 }
 
 int main(int argc, char* argv[])
@@ -878,11 +907,23 @@ int main(int argc, char* argv[])
 
         InitGpus();
 
-	if (!GpuCnt)
-	{
-		printf("No supported GPUs detected, exit\r\n");
-		return 0;
-	}
+        if (!GpuCnt)
+        {
+                printf("No supported GPUs detected, exit\r\n");
+                return 0;
+        }
+
+        if (gSelfTest)
+        {
+                if (RunSelfTest())
+                        printf("Self-test passed\n");
+                else
+                {
+                        printf("Self-test FAILED\n");
+                        return 0;
+                }
+                return 0;
+        }
 
         cudaMallocManaged((void**)&pPntList, MAX_CNT_LIST * GPU_DP_SIZE);
         cudaMallocManaged((void**)&pPntList2, MAX_CNT_LIST * GPU_DP_SIZE);

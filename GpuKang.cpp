@@ -578,8 +578,42 @@ void RCGpuKang::Execute()
 
 int RCGpuKang::GetStatsSpeed()
 {
-	int res = SpeedStats[0];
-	for (int i = 1; i < STATS_WND_SIZE; i++)
-		res += SpeedStats[i];
-	return res / STATS_WND_SIZE;
+        int res = SpeedStats[0];
+        for (int i = 1; i < STATS_WND_SIZE; i++)
+                res += SpeedStats[i];
+        return res / STATS_WND_SIZE;
+}
+
+bool GpuCalcKG(EcPoint& out, const EcInt& k, int cuda_index)
+{
+        TKparams params{};
+        params.BlockCnt = 1;
+        params.BlockSize = 1;
+        params.GroupCnt = PNT_GROUP_CNT;
+        params.KangCnt = PNT_GROUP_CNT;
+        params.IsGenMode = true;
+
+        cudaError_t err = cudaSetDevice(cuda_index);
+        if (err != cudaSuccess)
+                return false;
+
+        err = cudaMallocManaged((void**)&params.Kangs, params.KangCnt * 12 * sizeof(u64));
+        if (err != cudaSuccess)
+                return false;
+        memset(params.Kangs, 0, params.KangCnt * 12 * sizeof(u64));
+        params.Kangs[8] = k.data[0];
+        params.Kangs[9] = k.data[1];
+        params.Kangs[10] = 0;
+
+        CallGpuKernelGen(params);
+        err = cudaDeviceSynchronize();
+        if (err != cudaSuccess)
+        {
+                cudaFree(params.Kangs);
+                return false;
+        }
+        memcpy(out.x.data, &params.Kangs[0], 32);
+        memcpy(out.y.data, &params.Kangs[4], 32);
+        cudaFree(params.Kangs);
+        return true;
 }
