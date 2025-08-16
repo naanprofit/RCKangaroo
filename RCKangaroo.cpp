@@ -119,11 +119,16 @@ void BuildJumpTables(int Range)
 #pragma pack(push, 1)
 struct DBRec
 {
-	u8 x[12];
-	u8 d[22];
-	u8 type; //0 - tame, 1 - wild1, 2 - wild2
+        u8 x[12];
+        u8 d[22];
+        u8 type; //0 - tame, 1 - wild1, 2 - wild2
 };
 #pragma pack(pop)
+
+#pragma pack(push,1)
+struct DBKey32 { u8 x_tail[9]; u8 d[22]; u8 type; };
+#pragma pack(pop)
+static_assert(sizeof(DBKey32) == 32, "DBKey32 must be 32 bytes");
 
 void InitGpus()
 {
@@ -364,13 +369,13 @@ void CheckNewPoints()
                         continue;
                 }
 
-                DBRec* pref = NULL;
+                DBKey32* pref = NULL;
                 if (!gMultiDP)
                 {
                         if (db.IsMapped())
-                                pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                                pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
                         else
-                                pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
+                                pref = (DBKey32*)db.FindOrAddDataBlock((u8*)&nrec);
                         if (!pref)
                                 continue;
                 }
@@ -379,10 +384,10 @@ void CheckNewPoints()
                         if (bloom_hit)
                         {
                                 if (db.IsMapped())
-                                        pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                                        pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
                                 else
                                 {
-                                        pref = (DBRec*)db.FindDataBlock((u8*)&nrec);
+                                        pref = (DBKey32*)db.FindDataBlock((u8*)&nrec);
                                         if (!pref)
                                         {
                                                 db.AddDataBlock((u8*)&nrec);
@@ -399,9 +404,10 @@ void CheckNewPoints()
                 }
 
                 DBRec tmp_pref;
-                memcpy(&tmp_pref, &nrec, 3);
-                memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
-                pref = &tmp_pref;
+                memcpy(tmp_pref.x, nrec.x, 12);
+                memcpy(tmp_pref.d, ((DBKey32*)pref)->d, 22);
+                tmp_pref.type = ((DBKey32*)pref)->type;
+                pref = (DBKey32*)&tmp_pref;
                 u8 pref_k = pref->type >> 2;
                 u8 pref_type = pref->type & 3;
 
@@ -800,7 +806,7 @@ bool ParseCommandLine(int argc, char* argv[])
 			ci++;
 			if ((val < 14) || (val > 60))
 			{
-				printf("error: invalid value for -dp option\r\n");
+                                printf("error: invalid value for -dp option (allowed 14..60)\r\n");
 				return false;
 			}
 			gDP = val;
