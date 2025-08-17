@@ -145,9 +145,11 @@ public:
 };
 
 // Streaming writer for tames records
+struct TamesRecordReader;
 struct TamesRecordWriter;
 TamesRecordWriter* TamesRecordWriterOpen(const char* path, bool base128, size_t rec_size, u64 prealloc_recs = 0);
 bool TamesRecordWriterWrite(TamesRecordWriter* wr, const u8* data);
 void TamesRecordWriterClose(TamesRecordWriter* wr);
+bool TamesRecordReaderRead(TamesRecordReader* r, u8* out_buf);
 
 bool IsFileExist(char* fn);

@@ -21,8 +21,7 @@ CCFLAGS   := $(OPT) $(CXXSTD) $(WARN) $(INCLUDES)
 #  - Ada (RTX 4060 Ti): sm_89  (ship SASS + PTX)
 #  - Pascal (Quadro P1000): sm_61 (ship SASS only to avoid old-PTX JIT surprises)
 GENCODE   := \
-  -gencode arch=compute_89,code=sm_89   -gencode arch=compute_89,code=compute_89 \
-  -gencode arch=compute_61,code=sm_61
+  -gencode arch=compute_89,code=sm_89   -gencode arch=compute_89,code=compute_89
 
 NVCCFLAGS := $(OPT) -rdc=true $(INCLUDES) $(GENCODE)
 

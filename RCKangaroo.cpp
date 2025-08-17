@@ -38,6 +38,7 @@ EcInt Int_TameOffset;
 Ec ec;
 
 CriticalSection csAddPoints;
+CriticalSection csList2;
 u8* pPntList;
 u8* pPntList2;
 size_t PntListCapacity = INIT_CNT_LIST;
@@ -119,11 +120,17 @@ void BuildJumpTables(int Range)
 #pragma pack(push, 1)
 struct DBRec
 {
-	u8 x[12];
-	u8 d[22];
-	u8 type; //0 - tame, 1 - wild1, 2 - wild2
+        u8 x[12];
+        u8 d[22];
+        u8 type; //0 - tame, 1 - wild1, 2 - wild2
 };
 #pragma pack(pop)
+
+#pragma pack(push,1)
+struct DBKey32 { u8 x_tail[9]; u8 d[22]; u8 type; };
+#pragma pack(pop)
+static_assert(sizeof(DBRec) == 35, "DBRec must be 35 bytes (12 x + 22 d + 1 type)");
+static_assert(sizeof(DBKey32) == 32, "DBKey32 must be exactly 32 bytes (matches TFastBase stride)");
 
 void InitGpus()
 {
@@ -233,6 +240,7 @@ static bool EnsurePointCapacity(int additional)
 
         u8* newList = NULL;
         u8* newList2 = NULL;
+        csList2.Enter();
         cudaError_t err1 = cudaMallocManaged((void**)&newList, newCap * GPU_DP_SIZE);
         cudaError_t err2 = cudaMallocManaged((void**)&newList2, newCap * GPU_DP_SIZE);
         if (err1 != cudaSuccess || err2 != cudaSuccess)
@@ -240,6 +248,7 @@ static bool EnsurePointCapacity(int additional)
                 printf("DPs buffer overflow, some points lost, increase DP value!\r\n");
                 if (newList) cudaFree(newList);
                 if (newList2) cudaFree(newList2);
+                csList2.Leave();
                 return false;
         }
         memcpy(newList, pPntList, PntIndex * GPU_DP_SIZE);
@@ -250,6 +259,7 @@ static bool EnsurePointCapacity(int additional)
         pPntList2 = newList2;
         PntListCapacity = newCap;
         printf("DP buffer grown to %zu entries\r\n", PntListCapacity);
+        csList2.Leave();
         return true;
 }
 
@@ -321,17 +331,18 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 
 void CheckNewPoints()
 {
-	csAddPoints.Enter();
-	if (!PntIndex)
-	{
-		csAddPoints.Leave();
-		return;
-	}
+        csAddPoints.Enter();
+        if (!PntIndex)
+        {
+                csAddPoints.Leave();
+                return;
+        }
 
-	int cnt = PntIndex;
-	memcpy(pPntList2, pPntList, GPU_DP_SIZE * cnt);
-	PntIndex = 0;
-	csAddPoints.Leave();
+        csList2.Enter();
+        int cnt = PntIndex;
+        memcpy(pPntList2, pPntList, GPU_DP_SIZE * cnt);
+        PntIndex = 0;
+        csAddPoints.Leave();
 
         for (int i = 0; i < cnt; i++)
         {
@@ -356,7 +367,6 @@ void CheckNewPoints()
                 u8 nrec_k = type_byte >> 2;
                 u8 nrec_type = type_byte & 3;
                 nrec.type = type_byte;
-
                 if (gGenMode)
                 {
                         if (gTamesWriter)
@@ -364,13 +374,13 @@ void CheckNewPoints()
                         continue;
                 }
 
-                DBRec* pref = NULL;
+                DBKey32* pref = NULL;
                 if (!gMultiDP)
                 {
                         if (db.IsMapped())
-                                pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                                pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
                         else
-                                pref = (DBRec*)db.FindOrAddDataBlock((u8*)&nrec);
+                                pref = (DBKey32*)db.FindOrAddDataBlock((u8*)&nrec);
                         if (!pref)
                                 continue;
                 }
@@ -379,10 +389,10 @@ void CheckNewPoints()
                         if (bloom_hit)
                         {
                                 if (db.IsMapped())
-                                        pref = (DBRec*)db.FindDataBlockMapped((u8*)&nrec);
+                                        pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
                                 else
                                 {
-                                        pref = (DBRec*)db.FindDataBlock((u8*)&nrec);
+                                        pref = (DBKey32*)db.FindDataBlock((u8*)&nrec);
                                         if (!pref)
                                         {
                                                 db.AddDataBlock((u8*)&nrec);
@@ -397,20 +407,20 @@ void CheckNewPoints()
                                 continue;
                         }
                 }
-
-                DBRec tmp_pref;
-                memcpy(&tmp_pref, &nrec, 3);
-                memcpy(((u8*)&tmp_pref) + 3, pref, sizeof(DBRec) - 3);
-                pref = &tmp_pref;
-                u8 pref_k = pref->type >> 2;
-                u8 pref_type = pref->type & 3;
+                DBRec pref_rec;
+                memcpy(pref_rec.x, nrec.x, 3);
+                memcpy(pref_rec.x + 3, pref->x_tail, 9);
+                memcpy(pref_rec.d, pref->d, 22);
+                pref_rec.type = pref->type;
+                u8 pref_k = pref_rec.type >> 2;
+                u8 pref_type = pref_rec.type & 3;
 
                 if ((pref_type == nrec_type) && (pref_k == nrec_k))
                 {
                         if (pref_type == TAME)
                                 continue;
 
-                        if (*(u64*)pref->d == *(u64*)nrec.d)
+                        if (*(u64*)pref_rec.d == *(u64*)nrec.d)
                                 continue;
                 }
 
@@ -419,8 +429,8 @@ void CheckNewPoints()
                 int phi_t, phi_w;
                 if (pref_type != TAME)
                 {
-                        memcpy(w.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF)
+                        memcpy(w.data, pref_rec.d, sizeof(pref_rec.d));
+                        if (pref_rec.d[21] == 0xFF)
                                 memset(((u8*)w.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)w.data) + 22, 0, 18);
@@ -441,8 +451,8 @@ void CheckNewPoints()
                                 memset(((u8*)w.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)w.data) + 22, 0, 18);
-                        memcpy(t.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF)
+                        memcpy(t.data, pref_rec.d, sizeof(pref_rec.d));
+                        if (pref_rec.d[21] == 0xFF)
                                 memset(((u8*)t.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)t.data) + 22, 0, 18);
@@ -475,6 +485,7 @@ void CheckNewPoints()
                 gSolved = true;
                 break;
         }
+        csList2.Leave();
 }
 
 
@@ -564,75 +575,74 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
        bool tamesRangeMismatch = false;
        if (!gGenMode && gTamesFileName[0])
        {
-               printf("load tames...\r\n");
-               bool fileBase128 = false;
+              printf("load tames...\r\n");
+              bool ok = false;
+              if (gTamesBase128)
+              {
+                      ok = db.LoadFromFileBase128(gTamesFileName);
+                      if (!ok)
+                      {
+                              printf("Base128 tames loading failed\r\n");
+                              return false;
+                      }
+                      printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+              }
+              else
+              {
+                      FILE* tfp = fopen(gTamesFileName, "rb");
+                      if (!tfp)
+                      {
+                              printf("error: cannot open tames file\r\n");
+                              return false;
+                      }
+                      u8 magic[4] = {0};
+                      fread(magic, 1, 4, tfp);
+                      fclose(tfp);
+                      if (memcmp(magic, TAMES_MAGIC, 4) == 0)
+                      {
+                              ok = db.OpenMapped(gTamesFileName);
+                              if (!ok)
+                              {
+                                      printf("memory-mapped tames failed, loading into RAM...\r\n");
+                                      ok = db.LoadFromFile(gTamesFileName);
+                                      if (!ok)
+                                      {
+                                              printf("binary tames loading failed\r\n");
+                                              return false;
+                                      }
+                              }
+                      }
+                      else
+                      {
+                              ok = db.LoadFromFileBase128(gTamesFileName);
+                              if (!ok)
+                              {
+                                      printf("tames format mismatch; file is Base128 but binary expected\r\n");
+                                      return false;
+                              }
+                              printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
+                              gTamesBase128 = true;
+                      }
+              }
 
-               FILE* tfp = fopen(gTamesFileName, "rb");
-               if (!tfp)
-               {
-                       printf("tames open failed\r\n");
-                       return false;
-               }
-               u8 magic[4];
-               if (fread(magic, 1, 4, tfp) == 4)
-                       fileBase128 = memcmp(magic, TAMES_MAGIC, 4) != 0;
-               else
-               {
-                       printf("tames header read failed\r\n");
-                       fclose(tfp);
-                       return false;
-               }
-               fclose(tfp);
-
-               if (fileBase128 != gTamesBase128)
-               {
-                       printf("error: tames format mismatch; file is %s but %s expected\r\n",
-                               fileBase128 ? "Base128" : "binary", gTamesBase128 ? "Base128" : "binary");
-                       return false;
-               }
-
-               bool ok = false;
-               if (fileBase128)
-               {
-                       ok = db.LoadFromFileBase128(gTamesFileName);
-                       if (ok)
-                               printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
-                       else
-                               printf("Base128 tames loading failed\r\n");
-               }
-               else
-               {
-                       ok = db.OpenMapped(gTamesFileName);
-                       if (!ok)
-                       {
-                               printf("memory-mapped tames failed, loading into RAM...\r\n");
-                               ok = db.LoadFromFile(gTamesFileName);
-                               if (!ok)
-                                       printf("binary tames loading failed\r\n");
-                       }
-               }
-
-               if (!ok)
-                       return false;
-
-               bool hdrBase128 = (db.Header.flags & TAMES_FLAG_BASE128) != 0;
-               if (hdrBase128 != gTamesBase128)
-               {
-                       printf("error: tames header format mismatch\r\n");
-                       db.Clear();
-                       return false;
-               }
-               else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
-               {
-                       u32 fileRange = db.Header.flags >> TAMES_RANGE_SHIFT;
-                       printf("WARNING: tames cleared after %llu/%.0f ops. Reason: range mismatch (file:%u expected:%u)\r\n",
-                               PntTotalOps, MaxTotalOps, fileRange, gRange);
-                       db.Clear();
-                       tamesRangeMismatch = true;
-                       printf("Continuing without precomputed tames\r\n");
-               }
-               else
-                       printf("tames loaded\r\n");
+              bool hdrBase128 = (db.Header.flags & TAMES_FLAG_BASE128) != 0;
+              if (hdrBase128 != gTamesBase128)
+              {
+                      printf("error: tames header format mismatch\r\n");
+                      db.Clear();
+                      return false;
+              }
+              else if ((db.Header.flags >> TAMES_RANGE_SHIFT) != gRange)
+              {
+                      u32 fileRange = db.Header.flags >> TAMES_RANGE_SHIFT;
+                      printf("WARNING: tames cleared after %llu/%.0f ops. Reason: range mismatch (file:%u expected:%u)\r\n",
+                              PntTotalOps, MaxTotalOps, fileRange, gRange);
+                      db.Clear();
+                      tamesRangeMismatch = true;
+                      printf("Continuing without precomputed tames\r\n");
+              }
+              else
+                      printf("tames loaded\r\n");
        }
        else if (gGenMode && gTamesFileName[0])
        {
@@ -800,7 +810,7 @@ bool ParseCommandLine(int argc, char* argv[])
 			ci++;
 			if ((val < 14) || (val > 60))
 			{
-				printf("error: invalid value for -dp option\r\n");
+                                printf("error: invalid value for -dp option (allowed 14..60)\r\n");
 				return false;
 			}
 			gDP = val;
@@ -1253,10 +1263,12 @@ int main(int argc, char* argv[])
 	}
 label_end:
         db.CloseMapped();
-	for (int i = 0; i < GpuCnt; i++)
-		delete GpuKangs[i];
-	DeInitEc();
+        for (int i = 0; i < GpuCnt; i++)
+                delete GpuKangs[i];
+        DeInitEc();
+        csList2.Enter();
         cudaFree(pPntList2);
+        csList2.Leave();
         cudaFree(pPntList);
 }
 
