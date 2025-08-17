@@ -132,6 +132,7 @@ struct DBKey32 { u8 x_tail[9]; u8 d[22]; u8 type; };
 static_assert(sizeof(DBRec) == 35, "DBRec must be 35 bytes (12 x + 22 d + 1 type)");
 static_assert(sizeof(DBKey32) == 32, "DBKey32 must be exactly 32 bytes (matches TFastBase stride)");
 
+//<<<<<<< codex/apply-patch-for-tames-loading-logic-mps09a
 // Loading binary tames via memory mapping was triggering crashes in some
 // environments.  For robustness, always decode the file into RAM instead of
 // memory-mapping it.
@@ -139,6 +140,17 @@ static bool LoadFromFileBinaryMappedOrRAM(const char* path, TFastBase& db)
 {
        db.CloseMapped();
        return db.LoadFromFile((char*)path);
+//=======
+//static bool LoadFromFileBinaryMappedOrRAM(const char* path, TFastBase& db)
+//{
+//        bool ok = db.OpenMapped((char*)path);
+//        if (!ok)
+//        {
+//                printf("memory-mapped tames failed, loading into RAM...\r\n");
+//                ok = db.LoadFromFile((char*)path);
+//        }
+//        return ok;
+//>>>>>>> codex/apply-patch-to-rckangaroo.cpp-0lvw1u
 }
 
 void InitGpus()
@@ -597,6 +609,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                {
                        FILE* fp = fopen(gTamesFileName, "rb");
                        if (!fp)
+//<<<<<<< codex/apply-patch-for-tames-loading-logic-mps09a
                        {
                                printf("error: cannot open tames file\r\n");
                                return false;
@@ -609,6 +622,15 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                                printf("error: tames file too short\r\n");
                                return false;
                        }
+//=======
+//                       {
+//                               printf("error: cannot open tames file\r\n");
+//                               return false;
+//                       }
+//                       u8 magic[4] = {0};
+//                       fread(magic, 1, 4, fp);
+//                       fclose(fp);
+//>>>>>>> codex/apply-patch-to-rckangaroo.cpp-0lvw1u
                        if (magic[0]=='P' && magic[1]=='M' && magic[2]=='A' && magic[3]=='P')
                        {
                                if (!LoadFromFileBinaryMappedOrRAM(gTamesFileName, db))
@@ -621,7 +643,11 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                        {
                                if (!db.LoadFromFileBase128(gTamesFileName))
                                {
+//<<<<<<< codex/apply-patch-for-tames-loading-logic-mps09a
                                        printf("tames format mismatch; file is neither PMAP nor Base128\r\n");
+//=======
+//                                       printf("tames format mismatch; file is Base128 but binary expected\r\n");
+//>>>>>>> codex/apply-patch-to-rckangaroo.cpp-0lvw1u
                                        return false;
                                }
                        }
