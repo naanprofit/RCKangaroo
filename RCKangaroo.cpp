@@ -132,15 +132,12 @@ struct DBKey32 { u8 x_tail[9]; u8 d[22]; u8 type; };
 static_assert(sizeof(DBRec) == 35, "DBRec must be 35 bytes (12 x + 22 d + 1 type)");
 static_assert(sizeof(DBKey32) == 32, "DBKey32 must be exactly 32 bytes (matches TFastBase stride)");
 
+// Loading binary tames via memory mapping was triggering crashes in some
+// environments.  For robustness, always decode the file into RAM instead of
+// memory-mapping it.
 static bool LoadFromFileBinaryMappedOrRAM(const char* path, TFastBase& db)
 {
-        bool ok = db.OpenMapped((char*)path);
-        if (!ok)
-        {
-                printf("memory-mapped tames failed, loading into RAM...\r\n");
-                ok = db.LoadFromFile((char*)path);
-        }
-        return ok;
+        return db.LoadFromFile((char*)path);
 }
 
 void InitGpus()
