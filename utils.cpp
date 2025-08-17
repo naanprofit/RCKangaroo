@@ -12,6 +12,27 @@
 #include <fcntl.h>
 #endif
 
+#include <cstring>
+
+// Canonicalize a decoded Base128 tame record into the 32-byte DB body:
+// in35 layout: [x_head(3)] [x_tail(9)] [d(22)] [type(1)] = 35 bytes
+// out32 layout:              [x_tail(9)] [d(22)] [type(1)] = 32 bytes
+static inline bool CanonicalizeTameRecord(const u8* in_buf, int in_len, u8* out32)
+{
+    if (!in_buf || !out32) return false;
+    if (in_len == 32) {
+        memcpy(out32, in_buf, 32);
+        return true;
+    }
+    if (in_len == 35) {
+        memcpy(out32, in_buf + 3, 9);
+        memcpy(out32 + 9, in_buf + 12, 22);
+        out32[31] = in_buf[34];
+        return true;
+    }
+    return false;
+}
+
 #ifdef _WIN32
 
 #else
@@ -507,11 +528,14 @@ TamesRecordWriter* TamesRecordWriterOpen(const char* path, bool base128, size_t 
 
 bool TamesRecordWriterWrite(TamesRecordWriter* w, const u8* data)
 {
-        if (!w)
+        if (!w || !data)
                 return false;
         if (w->base128)
         {
-                return write_base128(w->fp, data, w->rec_size);
+                u8 body32[32];
+                if (!CanonicalizeTameRecord(data, (int)w->rec_size, body32))
+                        return false;
+                return write_base128(w->fp, body32, 32);
         }
         if (w->mapped_ptr)
         {
