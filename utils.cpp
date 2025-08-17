@@ -261,8 +261,8 @@ u8* TFastBase::AddDataBlock(u8* data, int pos)
 	}
 	int first = (pos < 0) ? lower_bound(list, data[0], data + 3) : pos;
 	memmove(list->data + first + 1, list->data + first, (list->cnt - first) * sizeof(u32));
-	u32 cmp_ptr;
-	void* ptr = mps[data[0]].AllocRec(&cmp_ptr);
+       u32 cmp_ptr = 0;
+       void* ptr = mps[data[0]].AllocRec(&cmp_ptr);
 	list->data[first] = cmp_ptr;
 	memcpy(ptr, data + 3, DB_REC_LEN);
 	list->cnt++;
@@ -271,8 +271,7 @@ u8* TFastBase::AddDataBlock(u8* data, int pos)
 
 u8* TFastBase::FindDataBlock(u8* data)
 {
-	bool res = false;
-	TListRec* list = &lists[data[0]][data[1]][data[2]];
+       TListRec* list = &lists[data[0]][data[1]][data[2]];
 	int first = lower_bound(list, data[0], data + 3);
 	if (first == list->cnt)
 		return NULL;
@@ -349,8 +348,8 @@ bool TFastBase::LoadFromFile(char* fn)
 
 					for (int m = 0; m < list->cnt; m++)
 					{
-						u32 cmp_ptr;
-						void* ptr = mps[i].AllocRec(&cmp_ptr);
+                                               u32 cmp_ptr = 0;
+                                               void* ptr = mps[i].AllocRec(&cmp_ptr);
 						list->data[m] = cmp_ptr;
                                                 if (fread(ptr, 1, DB_REC_LEN, fp) != DB_REC_LEN)
                                                 {
@@ -710,8 +709,8 @@ bool TFastBase::LoadFromFileBase128(char* fn)
                                                         fclose(fp);
                                                         return false;
                                                 }
-                                                u32 cmp_ptr;
-                                                void* ptr = mps[i].AllocRec(&cmp_ptr);
+                                               u32 cmp_ptr = 0;
+                                               void* ptr = mps[i].AllocRec(&cmp_ptr);
                                                 list->data[m] = cmp_ptr;
                                                 memcpy(ptr, buf, DB_REC_LEN);
                                         }
