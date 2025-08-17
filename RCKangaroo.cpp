@@ -367,12 +367,6 @@ void CheckNewPoints()
                 u8 nrec_k = type_byte >> 2;
                 u8 nrec_type = type_byte & 3;
                 nrec.type = type_byte;
-                // Build explicit 35-byte DB key: [x_head(3)] + [x_tail(9) + d(22) + type(1)]
-                u8 key35[3 + DB_REC_LEN];
-                key35[0] = nrec.x[0]; key35[1] = nrec.x[1]; key35[2] = nrec.x[2];
-                memcpy(key35 + 3, nrec.x + 3, 9);
-                memcpy(key35 + 12, nrec.d, 22);
-                key35[34] = nrec.type;
                 if (gGenMode)
                 {
                         if (gTamesWriter)
@@ -384,9 +378,9 @@ void CheckNewPoints()
                 if (!gMultiDP)
                 {
                         if (db.IsMapped())
-                                pref = (DBKey32*)db.FindDataBlockMapped((u8*)key35);
+                                pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
                         else
-                                pref = (DBKey32*)db.FindOrAddDataBlock((u8*)key35);
+                                pref = (DBKey32*)db.FindOrAddDataBlock((u8*)&nrec);
                         if (!pref)
                                 continue;
                 }
@@ -395,13 +389,13 @@ void CheckNewPoints()
                         if (bloom_hit)
                         {
                                 if (db.IsMapped())
-                                        pref = (DBKey32*)db.FindDataBlockMapped((u8*)key35);
+                                        pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
                                 else
                                 {
-                                        pref = (DBKey32*)db.FindDataBlock((u8*)key35);
+                                        pref = (DBKey32*)db.FindDataBlock((u8*)&nrec);
                                         if (!pref)
                                         {
-                                                db.AddDataBlock((u8*)key35);
+                                                db.AddDataBlock((u8*)&nrec);
                                                 continue;
                                         }
                                 }
@@ -409,12 +403,13 @@ void CheckNewPoints()
                         else
                         {
                                 if (!db.IsMapped())
-                                        db.AddDataBlock((u8*)key35);
+                                        db.AddDataBlock((u8*)&nrec);
                                 continue;
                         }
                 }
                 DBRec pref_rec;
-                memcpy(pref_rec.x, nrec.x, 12);
+                memcpy(pref_rec.x, nrec.x, 3);
+                memcpy(pref_rec.x + 3, pref->x_tail, 9);
                 memcpy(pref_rec.d, pref->d, 22);
                 pref_rec.type = pref->type;
                 u8 pref_k = pref_rec.type >> 2;
