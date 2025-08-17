@@ -55,21 +55,23 @@ int main(int argc, char* argv[])
                 return 1;
         }
 
-        TFastBase db;
+        TFastBase* db = new TFastBase();
         for (uint64_t i = 0; i < count; i++)
         {
                 u8 rec35[3 + DB_REC_LEN];
                 for (int j = 0; j < 3 + DB_REC_LEN; j++)
                         rec35[j] = rand() & 0xFF;
-                db.AddDataBlock(rec35);
+                db->AddDataBlock(rec35);
         }
-        db.Header.flags = (range << TAMES_RANGE_SHIFT);
-        bool ok = base128 ? db.SaveToFileBase128(out_file) : db.SaveToFile(out_file);
+        db->Header.flags = (range << TAMES_RANGE_SHIFT);
+        bool ok = base128 ? db->SaveToFileBase128(out_file) : db->SaveToFile(out_file);
         if (!ok)
         {
                 printf("Failed to save tames file\n");
+                delete db;
                 return 1;
         }
         printf("Generated %llu tames to %s\n", (unsigned long long)count, out_file);
+        delete db;
         return 0;
 }
