@@ -33,6 +33,13 @@ static inline bool CanonicalizeTameRecord(const u8* in_buf, int in_len, u8* out3
     return false;
 }
 
+// Read one Base128 "logical record" from FILE* into tmp[]
+// Uses existing read_base128 helper which returns bytes decoded or <=0 on EOF/error
+static int ReadOneBase128(FILE* fp, u8* tmp, int cap)
+{
+    return read_base128(fp, tmp, cap);
+}
+
 #ifdef _WIN32
 
 #else
@@ -458,6 +465,26 @@ static bool read_base128(FILE* fp, u8* data, size_t len)
         return true;
 }
 
+struct TamesRecordReader
+{
+        bool is_base128;
+        FILE* fp;
+};
+
+// Base128 reader: accept 32 or 35 and normalize to 32-byte DB body
+bool TamesRecordReaderRead(TamesRecordReader* r, u8* out_buf)
+{
+        if (!r || !out_buf || !r->is_base128)
+                return false;
+        u8 tmp[64];
+        const int got = ReadOneBase128(r->fp, tmp, (int)sizeof(tmp));
+        if (got <= 0)
+                return false;
+        if (!CanonicalizeTameRecord(tmp, got, out_buf))
+                return false;
+        return true;
+}
+
 struct TamesRecordWriter
 {
         bool base128;
@@ -533,8 +560,10 @@ bool TamesRecordWriterWrite(TamesRecordWriter* w, const u8* data)
         if (w->base128)
         {
                 u8 body32[32];
-                if (!CanonicalizeTameRecord(data, (int)w->rec_size, body32))
+                if (!CanonicalizeTameRecord(data, 35, body32) &&
+                    !CanonicalizeTameRecord(data, 32, body32))
                         return false;
+                w->rec_size = 32;
                 return write_base128(w->fp, body32, 32);
         }
         if (w->mapped_ptr)
