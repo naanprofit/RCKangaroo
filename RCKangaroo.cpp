@@ -132,9 +132,20 @@ struct DBKey32 { u8 x_tail[9]; u8 d[22]; u8 type; };
 static_assert(sizeof(DBRec) == 35, "DBRec must be 35 bytes (12 x + 22 d + 1 type)");
 static_assert(sizeof(DBKey32) == 32, "DBKey32 must be exactly 32 bytes (matches TFastBase stride)");
 
+static bool LoadFromFileBinaryMappedOrRAM(const char* path, TFastBase& db)
+{
+        bool ok = db.OpenMapped((char*)path);
+        if (!ok)
+        {
+                printf("memory-mapped tames failed, loading into RAM...\r\n");
+                ok = db.LoadFromFile((char*)path);
+        }
+        return ok;
+}
+
 void InitGpus()
 {
-	GpuCnt = 0;
+        GpuCnt = 0;
 	int gcnt = 0;
 	cudaGetDeviceCount(&gcnt);
 	if (gcnt > MAX_GPU_CNT)
@@ -576,55 +587,42 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
        if (!gGenMode && gTamesFileName[0])
        {
                printf("load tames...\r\n");
-               bool fileBase128 = false;
-
-               FILE* tfp = fopen(gTamesFileName, "rb");
-               if (!tfp)
+               if (gTamesBase128)
                {
-                       printf("tames open failed\r\n");
-                       return false;
-               }
-               u8 magic[4];
-               if (fread(magic, 1, 4, tfp) == 4)
-                       fileBase128 = memcmp(magic, TAMES_MAGIC, 4) != 0;
-               else
-               {
-                       printf("tames header read failed\r\n");
-                       fclose(tfp);
-                       return false;
-               }
-               fclose(tfp);
-
-               if (fileBase128 != gTamesBase128)
-               {
-                       printf("error: tames format mismatch; file is %s but %s expected\r\n",
-                               fileBase128 ? "Base128" : "binary", gTamesBase128 ? "Base128" : "binary");
-                       return false;
-               }
-
-               bool ok = false;
-               if (fileBase128)
-               {
-                       ok = db.LoadFromFileBase128(gTamesFileName);
-                       if (ok)
-                               printf("Base128 tames cannot be memory-mapped and require full in-memory decoding.\r\n");
-                       else
-                               printf("Base128 tames loading failed\r\n");
-               }
-               else
-               {
-                       ok = db.OpenMapped(gTamesFileName);
-                       if (!ok)
+                       if (!db.LoadFromFileBase128(gTamesFileName))
                        {
-                               printf("memory-mapped tames failed, loading into RAM...\r\n");
-                               ok = db.LoadFromFile(gTamesFileName);
-                               if (!ok)
-                                       printf("binary tames loading failed\r\n");
+                               printf("Base128 tames loading failed\r\n");
+                               return false;
                        }
                }
-
-               if (!ok)
-                       return false;
+               else
+               {
+                       FILE* fp = fopen(gTamesFileName, "rb");
+                       if (!fp)
+                       {
+                               printf("error: cannot open tames file\r\n");
+                               return false;
+                       }
+                       u8 magic[4] = {0};
+                       fread(magic, 1, 4, fp);
+                       fclose(fp);
+                       if (magic[0]=='P' && magic[1]=='M' && magic[2]=='A' && magic[3]=='P')
+                       {
+                               if (!LoadFromFileBinaryMappedOrRAM(gTamesFileName, db))
+                               {
+                                       printf("binary tames loading failed\r\n");
+                                       return false;
+                               }
+                       }
+                       else
+                       {
+                               if (!db.LoadFromFileBase128(gTamesFileName))
+                               {
+                                       printf("tames format mismatch; file is Base128 but binary expected\r\n");
+                                       return false;
+                               }
+                       }
+               }
 
                bool hdrBase128 = (db.Header.flags & TAMES_FLAG_BASE128) != 0;
                if (hdrBase128 != gTamesBase128)
