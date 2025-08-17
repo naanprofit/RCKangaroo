@@ -38,6 +38,7 @@ EcInt Int_TameOffset;
 Ec ec;
 
 CriticalSection csAddPoints;
+CriticalSection csList2;
 u8* pPntList;
 u8* pPntList2;
 size_t PntListCapacity = INIT_CNT_LIST;
@@ -238,6 +239,7 @@ static bool EnsurePointCapacity(int additional)
 
         u8* newList = NULL;
         u8* newList2 = NULL;
+        csList2.Enter();
         cudaError_t err1 = cudaMallocManaged((void**)&newList, newCap * GPU_DP_SIZE);
         cudaError_t err2 = cudaMallocManaged((void**)&newList2, newCap * GPU_DP_SIZE);
         if (err1 != cudaSuccess || err2 != cudaSuccess)
@@ -245,6 +247,7 @@ static bool EnsurePointCapacity(int additional)
                 printf("DPs buffer overflow, some points lost, increase DP value!\r\n");
                 if (newList) cudaFree(newList);
                 if (newList2) cudaFree(newList2);
+                csList2.Leave();
                 return false;
         }
         memcpy(newList, pPntList, PntIndex * GPU_DP_SIZE);
@@ -255,6 +258,7 @@ static bool EnsurePointCapacity(int additional)
         pPntList2 = newList2;
         PntListCapacity = newCap;
         printf("DP buffer grown to %zu entries\r\n", PntListCapacity);
+        csList2.Leave();
         return true;
 }
 
@@ -326,17 +330,18 @@ bool Collision_SOTA(EcPoint& pnt, EcInt t, int TameType, EcInt w, int WildType, 
 
 void CheckNewPoints()
 {
-	csAddPoints.Enter();
-	if (!PntIndex)
-	{
-		csAddPoints.Leave();
-		return;
-	}
+        csAddPoints.Enter();
+        if (!PntIndex)
+        {
+                csAddPoints.Leave();
+                return;
+        }
 
-	int cnt = PntIndex;
-	memcpy(pPntList2, pPntList, GPU_DP_SIZE * cnt);
-	PntIndex = 0;
-	csAddPoints.Leave();
+        csList2.Enter();
+        int cnt = PntIndex;
+        memcpy(pPntList2, pPntList, GPU_DP_SIZE * cnt);
+        PntIndex = 0;
+        csAddPoints.Leave();
 
         for (int i = 0; i < cnt; i++)
         {
@@ -481,6 +486,7 @@ void CheckNewPoints()
                 gSolved = true;
                 break;
         }
+        csList2.Leave();
 }
 
 
@@ -1259,10 +1265,12 @@ int main(int argc, char* argv[])
 	}
 label_end:
         db.CloseMapped();
-	for (int i = 0; i < GpuCnt; i++)
-		delete GpuKangs[i];
-	DeInitEc();
+        for (int i = 0; i < GpuCnt; i++)
+                delete GpuKangs[i];
+        DeInitEc();
+        csList2.Enter();
         cudaFree(pPntList2);
+        csList2.Leave();
         cudaFree(pPntList);
 }
 
