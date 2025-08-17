@@ -702,19 +702,18 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
 	pthread_t thr_handles[MAX_GPU_CNT];
 #endif
 
-	u32 ThreadID;
-	gSolved = false;
-	ThrCnt = GpuCnt;
-	for (int i = 0; i < GpuCnt; i++)
-	{
+       gSolved = false;
+       ThrCnt = GpuCnt;
+       for (int i = 0; i < GpuCnt; i++)
+       {
 #ifdef _WIN32
-		thr_handles[i] = (HANDLE)_beginthreadex(NULL, 0, kang_thr_proc, (void*)GpuKangs[i], 0, &ThreadID);
+               thr_handles[i] = (HANDLE)_beginthreadex(NULL, 0, kang_thr_proc, (void*)GpuKangs[i], 0, NULL);
 #else
-		pthread_create(&thr_handles[i], NULL, kang_thr_proc, (void*)GpuKangs[i]);
+               pthread_create(&thr_handles[i], NULL, kang_thr_proc, (void*)GpuKangs[i]);
 #endif
-	}
+       }
 
-	u64 tm_stats = GetTickCount64();
+       u64 tm_stats = GetTickCount64();
 	while (!gSolved)
 	{
 		CheckNewPoints();
