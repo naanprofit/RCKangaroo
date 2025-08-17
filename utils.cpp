@@ -301,10 +301,14 @@ label_not_found:
 //slow but I hope you are not going to create huge DB with this proof-of-concept software
 bool TFastBase::LoadFromFile(char* fn)
 {
-        Clear();
-        FILE* fp = fopen(fn, "rb");
-        if (!fp)
-                return false;
+       // Always start from a clean, unmapped state so later lookups do not
+       // mistakenly assume the database is memory mapped.
+       CloseMapped();
+       mapped_mode = false;
+       Clear();
+       FILE* fp = fopen(fn, "rb");
+       if (!fp)
+               return false;
         if (fread(&Header, 1, sizeof(Header), fp) != sizeof(Header))
         {
                 fclose(fp);
@@ -652,10 +656,13 @@ bool TFastBase::SaveToFileBase128(char* fn)
 
 bool TFastBase::LoadFromFileBase128(char* fn)
 {
-        Clear();
-        FILE* fp = fopen(fn, "rb");
-        if (!fp)
-                return false;
+       // Loading from Base128 likewise requires a clean, unmapped state.
+       CloseMapped();
+       mapped_mode = false;
+       Clear();
+       FILE* fp = fopen(fn, "rb");
+       if (!fp)
+               return false;
         if (!read_base128(fp, (u8*)&Header, sizeof(Header)))
         {
                 fclose(fp);

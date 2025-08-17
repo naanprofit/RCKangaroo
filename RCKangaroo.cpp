@@ -137,7 +137,8 @@ static_assert(sizeof(DBKey32) == 32, "DBKey32 must be exactly 32 bytes (matches 
 // memory-mapping it.
 static bool LoadFromFileBinaryMappedOrRAM(const char* path, TFastBase& db)
 {
-        return db.LoadFromFile((char*)path);
+       db.CloseMapped();
+       return db.LoadFromFile((char*)path);
 }
 
 void InitGpus()
