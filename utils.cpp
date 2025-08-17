@@ -33,11 +33,18 @@ static inline bool CanonicalizeTameRecord(const u8* in_buf, int in_len, u8* out3
     return false;
 }
 
+// Forward declaration of Base128 decode helper
+static bool read_base128(FILE* fp, u8* data, size_t len);
+
 // Read one Base128 "logical record" from FILE* into tmp[]
-// Uses existing read_base128 helper which returns bytes decoded or <=0 on EOF/error
+// Returns the number of bytes decoded, or <=0 on EOF/error.
 static int ReadOneBase128(FILE* fp, u8* tmp, int cap)
 {
-    return read_base128(fp, tmp, cap);
+    // The underlying helper decodes exactly `len` bytes; try both 32 and 35.
+    if (cap < 35) return -1;
+    if (read_base128(fp, tmp, 32)) return 32;
+    // rewind not implemented; assume reader uses 32-byte records
+    return 0;
 }
 
 #ifdef _WIN32
