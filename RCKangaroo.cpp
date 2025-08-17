@@ -604,8 +604,13 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                                return false;
                        }
                        u8 magic[4] = {0};
-                       fread(magic, 1, 4, fp);
+                       size_t rd = fread(magic, 1, 4, fp);
                        fclose(fp);
+                       if (rd != 4)
+                       {
+                               printf("error: tames file too short\r\n");
+                               return false;
+                       }
                        if (magic[0]=='P' && magic[1]=='M' && magic[2]=='A' && magic[3]=='P')
                        {
                                if (!LoadFromFileBinaryMappedOrRAM(gTamesFileName, db))
@@ -618,7 +623,7 @@ bool SolvePoint(EcPoint PntToSolve, int Range, int DP, EcInt* pk_res)
                        {
                                if (!db.LoadFromFileBase128(gTamesFileName))
                                {
-                                       printf("tames format mismatch; file is Base128 but binary expected\r\n");
+                                       printf("tames format mismatch; file is neither PMAP nor Base128\r\n");
                                        return false;
                                }
                        }

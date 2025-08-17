@@ -14,24 +14,38 @@ int main(int argc, char* argv[])
 {
         int range = 0;
         bool base128 = false;
-        int ci = 1;
-        while (ci < argc && argv[ci][0] == '-')
+        const char* out_file = NULL;
+        uint64_t count = 0;
+
+        for (int i = 1; i < argc; i++)
         {
-                char* argument = argv[ci];
-                ci++;
+                char* argument = argv[i];
                 if (strcmp(argument, "-range") == 0)
                 {
-                        if (ci >= argc)
+                        if (++i >= argc)
                         {
                                 printf("Usage: %s -range <bits(32-170)> [-base128] <output_file> <count>\n", argv[0]);
                                 return 1;
                         }
-                        range = atoi(argv[ci]);
-                        ci++;
+                        range = atoi(argv[i]);
                 }
                 else if (strcmp(argument, "-base128") == 0)
                 {
                         base128 = true;
+                }
+                else if (!out_file)
+                {
+                        out_file = argument;
+                }
+                else if (count == 0)
+                {
+                        errno = 0;
+                        count = strtoull(argument, NULL, 10);
+                        if (errno == ERANGE)
+                        {
+                                printf("Count exceeds supported limits\n");
+                                return 1;
+                        }
                 }
                 else
                 {
@@ -40,18 +54,9 @@ int main(int argc, char* argv[])
                 }
         }
 
-        if ((range < 32) || (range > 170) || (argc - ci < 2))
+        if ((range < 32) || (range > 170) || !out_file || count == 0)
         {
                 printf("Usage: %s -range <bits(32-170)> [-base128] <output_file> <count>\n", argv[0]);
-                return 1;
-        }
-
-        char* out_file = argv[ci];
-        errno = 0;
-        uint64_t count = strtoull(argv[ci + 1], NULL, 10);
-        if (errno == ERANGE)
-        {
-                printf("Count exceeds supported limits\n");
                 return 1;
         }
 
@@ -64,7 +69,7 @@ int main(int argc, char* argv[])
                 db->AddDataBlock(rec35);
         }
         db->Header.flags = (range << TAMES_RANGE_SHIFT);
-        bool ok = base128 ? db->SaveToFileBase128(out_file) : db->SaveToFile(out_file);
+        bool ok = base128 ? db->SaveToFileBase128((char*)out_file) : db->SaveToFile((char*)out_file);
         if (!ok)
         {
                 printf("Failed to save tames file\n");
