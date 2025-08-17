@@ -129,7 +129,8 @@ struct DBRec
 #pragma pack(push,1)
 struct DBKey32 { u8 x_tail[9]; u8 d[22]; u8 type; };
 #pragma pack(pop)
-static_assert(sizeof(DBKey32) == 32, "DBKey32 must be 32 bytes");
+static_assert(sizeof(DBRec) == 35, "DBRec must be 35 bytes (12 x + 22 d + 1 type)");
+static_assert(sizeof(DBKey32) == 32, "DBKey32 must be exactly 32 bytes (matches TFastBase stride)");
 
 void InitGpus()
 {
@@ -366,7 +367,12 @@ void CheckNewPoints()
                 u8 nrec_k = type_byte >> 2;
                 u8 nrec_type = type_byte & 3;
                 nrec.type = type_byte;
-
+                // Build explicit 35-byte DB key: [x_head(3)] + [x_tail(9) + d(22) + type(1)]
+                u8 key35[3 + DB_REC_LEN];
+                key35[0] = nrec.x[0]; key35[1] = nrec.x[1]; key35[2] = nrec.x[2];
+                memcpy(key35 + 3, nrec.x + 3, 9);
+                memcpy(key35 + 12, nrec.d, 22);
+                key35[34] = nrec.type;
                 if (gGenMode)
                 {
                         if (gTamesWriter)
@@ -378,9 +384,9 @@ void CheckNewPoints()
                 if (!gMultiDP)
                 {
                         if (db.IsMapped())
-                                pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
+                                pref = (DBKey32*)db.FindDataBlockMapped((u8*)key35);
                         else
-                                pref = (DBKey32*)db.FindOrAddDataBlock((u8*)&nrec);
+                                pref = (DBKey32*)db.FindOrAddDataBlock((u8*)key35);
                         if (!pref)
                                 continue;
                 }
@@ -389,13 +395,13 @@ void CheckNewPoints()
                         if (bloom_hit)
                         {
                                 if (db.IsMapped())
-                                        pref = (DBKey32*)db.FindDataBlockMapped((u8*)&nrec);
+                                        pref = (DBKey32*)db.FindDataBlockMapped((u8*)key35);
                                 else
                                 {
-                                        pref = (DBKey32*)db.FindDataBlock((u8*)&nrec);
+                                        pref = (DBKey32*)db.FindDataBlock((u8*)key35);
                                         if (!pref)
                                         {
-                                                db.AddDataBlock((u8*)&nrec);
+                                                db.AddDataBlock((u8*)key35);
                                                 continue;
                                         }
                                 }
@@ -403,25 +409,23 @@ void CheckNewPoints()
                         else
                         {
                                 if (!db.IsMapped())
-                                        db.AddDataBlock((u8*)&nrec);
+                                        db.AddDataBlock((u8*)key35);
                                 continue;
                         }
                 }
-
-                DBRec tmp_pref;
-                memcpy(tmp_pref.x, nrec.x, 12);
-                memcpy(tmp_pref.d, ((DBKey32*)pref)->d, 22);
-                tmp_pref.type = ((DBKey32*)pref)->type;
-                pref = (DBKey32*)&tmp_pref;
-                u8 pref_k = pref->type >> 2;
-                u8 pref_type = pref->type & 3;
+                DBRec pref_rec;
+                memcpy(pref_rec.x, nrec.x, 12);
+                memcpy(pref_rec.d, pref->d, 22);
+                pref_rec.type = pref->type;
+                u8 pref_k = pref_rec.type >> 2;
+                u8 pref_type = pref_rec.type & 3;
 
                 if ((pref_type == nrec_type) && (pref_k == nrec_k))
                 {
                         if (pref_type == TAME)
                                 continue;
 
-                        if (*(u64*)pref->d == *(u64*)nrec.d)
+                        if (*(u64*)pref_rec.d == *(u64*)nrec.d)
                                 continue;
                 }
 
@@ -430,8 +434,8 @@ void CheckNewPoints()
                 int phi_t, phi_w;
                 if (pref_type != TAME)
                 {
-                        memcpy(w.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF)
+                        memcpy(w.data, pref_rec.d, sizeof(pref_rec.d));
+                        if (pref_rec.d[21] == 0xFF)
                                 memset(((u8*)w.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)w.data) + 22, 0, 18);
@@ -452,8 +456,8 @@ void CheckNewPoints()
                                 memset(((u8*)w.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)w.data) + 22, 0, 18);
-                        memcpy(t.data, pref->d, sizeof(pref->d));
-                        if (pref->d[21] == 0xFF)
+                        memcpy(t.data, pref_rec.d, sizeof(pref_rec.d));
+                        if (pref_rec.d[21] == 0xFF)
                                 memset(((u8*)t.data) + 22, 0xFF, 18);
                         else
                                 memset(((u8*)t.data) + 22, 0, 18);
